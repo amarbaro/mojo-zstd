@@ -8,3 +8,6 @@ dependencies = ["mojo>=1.2.0,<1.3"]
 
 [dependency-groups]
 dev = ["zstandard", "lz4"]
+
+[tool.mojo]
+packages = ["lz4", "zstd"]  # one conda package carries both .mojoc files
