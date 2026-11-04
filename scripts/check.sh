@@ -36,4 +36,5 @@ read -r ok2 r2 <<< "$(rss .work/stream .work/s.zst 128)" || { echo "FAIL stream:
 echo "stream: 128 MiB written and read back through 128 KiB buffers, peak RSS ${r2} KB (${r1} KB for 1 MiB)"
 .work/api || { echo "FAIL api: tests/api.mojo"; exit 1; }
 $M run -I src examples/quickstart.mojo > /dev/null || { echo "FAIL example: examples/quickstart.mojo"; exit 1; }
+diff <(sed -n '/^```mojo$/,/^```$/p' README.md | sed '1d;$d') examples/quickstart.mojo > /dev/null || { echo "FAIL doc-test: README example differs from examples/quickstart.mojo"; exit 1; }
 echo "PASS all"
