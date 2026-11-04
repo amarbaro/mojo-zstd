@@ -3,7 +3,7 @@
   verify DIR      cases.mojo's out/ and our/ files against ref/ and the sources
   corpus FILE MB  seeded word-salad text, the bench input
   bench FILE      the work of tests/bench.mojo, in Python"""
-import os, random, resource, sys, time
+import ctypes, os, random, resource, sys, time
 import lz4.frame as L
 import zstandard as Z
 
@@ -11,8 +11,40 @@ resource.setrlimit(resource.RLIMIT_AS, (3 << 30, 3 << 30))  # memory rule: a run
 MAX_FRAMES, MAX_OUT = 64, 1 << 28  # bounds for dec(): frames per input, decoded bytes
 
 
+class _Buf(ctypes.Structure):
+    _fields_ = [("p", ctypes.c_void_p), ("size", ctypes.c_size_t), ("pos", ctypes.c_size_t)]
+
+
+def sysdec(b):
+    """Every frame of b through the system libzstd.so.1, the library src/zstd loads; None when it calls b bad.
+    A corrupted frame's verdict depends on the libzstd version (1.5.5 accepts frames 1.5.7 rejects), so
+    corrupted variants are judged by the library the wrapper runs on; valid frames keep zstandard."""
+    z = ctypes.CDLL("libzstd.so.1")
+    z.ZSTD_createDStream.restype = ctypes.c_void_p
+    z.ZSTD_decompressStream.restype = ctypes.c_size_t
+    z.ZSTD_decompressStream.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Buf), ctypes.POINTER(_Buf)]
+    z.ZSTD_isError.argtypes = [ctypes.c_size_t]
+    z.ZSTD_freeDStream.argtypes = [ctypes.c_void_p]
+    ds, src, out, rc = z.ZSTD_createDStream(), ctypes.create_string_buffer(b, len(b)), [], 1
+    dst = ctypes.create_string_buffer(1 << 16)
+    i = _Buf(ctypes.cast(src, ctypes.c_void_p), len(b), 0)
+    try:
+        while i.pos < len(b) or rc != 0:
+            o = _Buf(ctypes.cast(dst, ctypes.c_void_p), len(dst), 0)
+            before = i.pos
+            rc = z.ZSTD_decompressStream(ds, ctypes.byref(o), ctypes.byref(i))
+            if z.ZSTD_isError(rc):
+                return None
+            out.append(dst.raw[:o.pos])
+            if sum(map(len, out)) > MAX_OUT or (o.pos == 0 and i.pos == before):
+                return None  # over the bound, or no progress: input ended inside a frame
+    finally:
+        z.ZSTD_freeDStream(ds)
+    return b"".join(out)
+
+
 def dec(b, kind):
-    """Every frame of b, concatenated; None when Python (same libs) calls the input bad."""
+    """Every frame of b, concatenated; None when Python calls the input bad."""
     out, first = [], True
     try:
         while first or b:
@@ -86,7 +118,7 @@ def gen(d, n, seed):
         jobs.append(f"stream {name}"); want.append(f"stream {name} ok {len(r)}")
     for f, c in files.items():
         open(f"{d}/{f}", "wb").write(c)
-        o = dec(c, f[-3:])
+        o = sysdec(c) if ".bad" in f and f.endswith(".zst") else dec(c, f[-3:])
         r = "error" if o is None else f"ok {len(o)}"
         jobs.append(f"dec {f}"); want.append(f"dec {f} {r}")
         if f.endswith(".zst"):
