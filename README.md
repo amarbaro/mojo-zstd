@@ -1,5 +1,9 @@
 # mojo-zstd
 
+<!-- badges -->
+[![ci](https://github.com/amarbaro/mojo-zstd/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/amarbaro/mojo-zstd/actions/workflows/ci.yml) [![latest release](https://img.shields.io/github/v/release/amarbaro/mojo-zstd)](https://github.com/amarbaro/mojo-zstd/releases/latest) [![license](https://img.shields.io/github/license/amarbaro/mojo-zstd)](https://github.com/amarbaro/mojo-zstd/blob/main/LICENSE) [![checks](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/amarbaro/mojo-zstd/badges/checks.json)](https://github.com/amarbaro/mojo-zstd/actions/workflows/ci.yml)
+<!-- /badges -->
+
 <!-- install -->
 Install: `pixi add mojo-zstd` once published. For now: `git clone https://github.com/amarbaro/mojo-zstd`, then `mojo run -I mojo-zstd/src app.mojo`.
 
