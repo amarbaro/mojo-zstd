@@ -1,11 +1,10 @@
 # mojo-zstd
 
-Read and write zstd and lz4 frames from Mojo. It calls the system `libzstd.so.1` and
-`liblz4.so.1`, loaded at run time, so `mojo run` and `mojo build` need no linker flag.
-230 lines in `src/`. Every result is checked against Python `zstandard` and `lz4` on 24075 jobs,
-including bit-flipped, truncated and trailing-garbage input.
+<!-- install -->
+Install: `pixi add mojo-zstd` once published. For now: `git clone https://github.com/amarbaro/mojo-zstd`, then `mojo run -I mojo-zstd/src app.mojo`.
 
 ```mojo
+from std.os import remove
 import lz4
 import zstd
 
@@ -17,10 +16,10 @@ def main() raises:
     print("zstd", len(text), "->", len(z), "| lz4", len(text), "->", len(l))
     if zstd.decompress(z) != List(text) or lz4.decompress(l) != List(text):
         raise Error("round trip differs")
-    var w = zstd.ZstdWriter(".work/quickstart.zst")  # streaming, fixed memory
+    var w = zstd.ZstdWriter("quickstart.zst")  # streaming, fixed memory
     w.write(text)
     w.close()
-    var r = zstd.ZstdReader(".work/quickstart.zst")
+    var r = zstd.ZstdReader("quickstart.zst")
     var buf = List[UInt8](length=1 << 16, fill=0)
     var total = 0
     while True:
@@ -29,19 +28,19 @@ def main() raises:
             break
         total += n
     print("streamed back", total, "bytes")
+    remove("quickstart.zst")
 ```
+<!-- /install -->
+
+Read and write zstd and lz4 frames from Mojo. It calls the system `libzstd.so.1` and
+`liblz4.so.1`, loaded at run time, so `mojo run` and `mojo build` need no linker flag.
+230 lines in `src/`. Every result is checked against Python `zstandard` and `lz4` on 24075 jobs,
+including bit-flipped, truncated and trailing-garbage input.
 
 This is `examples/quickstart.mojo`; `scripts/check.sh` runs it.
 
-## Install
-
 Requires Mojo 1.2 on Linux, `libzstd.so.1` and `liblz4.so.1` (present on desktop and server
 distros; no `-dev` package).
-
-| Way | Command |
-|---|---|
-| Source path | `mojo run -I path/to/mojo-zstd/src app.mojo` |
-| Vendor | copy `src/zstd/` and `src/lz4/` into your project |
 
 ## What you get
 

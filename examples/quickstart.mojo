@@ -1,3 +1,4 @@
+from std.os import remove
 import lz4
 import zstd
 
@@ -9,10 +10,10 @@ def main() raises:
     print("zstd", len(text), "->", len(z), "| lz4", len(text), "->", len(l))
     if zstd.decompress(z) != List(text) or lz4.decompress(l) != List(text):
         raise Error("round trip differs")
-    var w = zstd.ZstdWriter(".work/quickstart.zst")  # streaming, fixed memory
+    var w = zstd.ZstdWriter("quickstart.zst")  # streaming, fixed memory
     w.write(text)
     w.close()
-    var r = zstd.ZstdReader(".work/quickstart.zst")
+    var r = zstd.ZstdReader("quickstart.zst")
     var buf = List[UInt8](length=1 << 16, fill=0)
     var total = 0
     while True:
@@ -21,3 +22,4 @@ def main() raises:
             break
         total += n
     print("streamed back", total, "bytes")
+    remove("quickstart.zst")
