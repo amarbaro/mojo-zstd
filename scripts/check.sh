@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p .work
-M=.venv/bin/mojo; PY=".venv/bin/python -I"
+M=${MOJO:-.venv/bin/mojo}; PY=".venv/bin/python -I"
 build() { $M build -I src "tests/$1.mojo" -o ".work/$1" 2>.work/build.err || { echo "FAIL build: tests/$1.mojo"; cat .work/build.err; exit 1; }; }
 for t in cases api stream; do build $t; done
 compare() {  # compare DIR: run tests/cases on DIR, diff its verdicts and bytes against the oracle's
