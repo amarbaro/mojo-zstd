@@ -5,7 +5,8 @@
 <!-- /badges -->
 
 <!-- install -->
-Install: `pixi add mojo-zstd` once published. For now: `git clone https://github.com/amarbaro/mojo-zstd`, then `mojo run -I mojo-zstd/src app.mojo`.
+Install: `pixi workspace channel add https://conda.modular.com/max https://prefix.dev/amarbaro/amarbaro`, then `pixi add mojo-zstd` (import `lz4` and `zstd`). From source: `git clone https://github.com/amarbaro/mojo-zstd`, then `mojo run -I mojo-zstd/src app.mojo`.
+Toolchains: Mojo 1.2 stable, and the nightly 1.3.0.dev2026110805 in the weekly [mojo-libs](https://github.com/amarbaro/mojo-libs) matrix (36 libraries on stable, 35 on nightly).
 
 ```mojo
 from std.os import remove
@@ -62,6 +63,8 @@ decompress 34 to 36 ms (Python 38 to 42); lz4 compress 36 to 44 ms (Python 44), 
 29 to 35 ms (Python 40 to 44). One mojo zstd run read 179 ms compress, a noisy outlier. Same
 libraries underneath, so the claim is parity, not a faster codec. Peak RSS 113 MB against 123 MB.
 Streaming 128 MiB through `ZstdWriter` and `ZstdReader` peaks at 13.7 MB, the same as 1 MiB.
+
+**Limits:** Linux only, with the host's `libzstd.so.1` and `liblz4.so.1`. Not covered: dictionaries, multithreading, the lz4 block format, lz4 levels.
 
 ## Checks
 
