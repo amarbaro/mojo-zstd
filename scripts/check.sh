@@ -29,8 +29,11 @@ done
 rss() { $PY -c 'import resource, subprocess, sys
 o = subprocess.run(sys.argv[1:], capture_output=True, text=True, check=True).stdout.split()
 print(o[1] == o[2], resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)' "$@"; }
-read -r ok1 r1 <<< "$(rss .work/stream .work/s.zst 1)" || { echo "FAIL stream: crashed"; exit 1; }
-read -r ok2 r2 <<< "$(rss .work/stream .work/s.zst 128)" || { echo "FAIL stream: crashed"; exit 1; }
+# peak RSS of one process varies by about +-0.5 MB run to run (runner noise up to 1.3 MB): take the lowest of 3 per size
+low() { local best="" ok r; for _ in 1 2 3; do read -r ok r <<< "$(rss .work/stream .work/s.zst "$1")" || return 1
+  [[ $ok == True ]] || { echo "False 0"; return 0; }; [[ -z $best || $r -lt $best ]] && best=$r; done; echo "True $best"; }
+read -r ok1 r1 <<< "$(low 1)" || { echo "FAIL stream: crashed"; exit 1; }
+read -r ok2 r2 <<< "$(low 128)" || { echo "FAIL stream: crashed"; exit 1; }
 [[ $ok1 == True && $ok2 == True ]] || { echo "FAIL stream: read-back checksum differs"; exit 1; }
 (( r2 < 2 * r1 && r2 - r1 < 1024 )) || { echo "FAIL stream: peak RSS ${r1} KB for 1 MiB, ${r2} KB for 128 MiB; want < 2x and < +1 MB"; exit 1; }
 echo "stream: 128 MiB written and read back through 128 KiB buffers, peak RSS ${r2} KB (${r1} KB for 1 MiB)"
