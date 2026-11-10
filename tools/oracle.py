@@ -1,5 +1,5 @@
 """Oracle for the gate, Python zstandard + lz4 (dev group). Run as `.venv/bin/python -I tools/oracle.py`.
-  gen DIR N SEED  fixtures + N seeded random cases + corrupted variants; writes jobs.txt, want.txt, ref/
+  gen DIR N SEED [BADS]  fixtures + N seeded random cases + corrupted variants; writes jobs.txt, want.txt, ref/
   verify DIR      cases.mojo's out/ and our/ files against ref/ and the sources
   corpus FILE MB  seeded word-salad text, the bench input
   bench FILE      the work of tests/bench.mojo, in Python"""
@@ -95,7 +95,7 @@ def bad(c, rng):
     return c + rng.randbytes(rng.randrange(1, 9))
 
 
-def gen(d, n, seed):
+def gen(d, n, seed, bads=2):
     rng = random.Random(seed)
     for s in ("", "ref", "our", "out"):
         os.makedirs(f"{d}/{s}", exist_ok=True)
@@ -106,7 +106,7 @@ def gen(d, n, seed):
     files = {}
     for name, r in raws.items():
         files[name + ".zst"], files[name + ".lz4"] = zenc(r, rng), lenc(r, rng)
-        for k in range(2):
+        for k in range(bads):
             files[f"{name}.bad{k}.zst"], files[f"{name}.bad{k}.lz4"] = bad(files[name + ".zst"], rng), bad(files[name + ".lz4"], rng)
     files["multi.zst"] = zenc(raws["text"], rng) + zenc(b"", rng) + zenc(raws["one"], rng)
     files["multi.lz4"] = lenc(raws["text"], rng) + lenc(raws["one"], rng)
@@ -167,4 +167,4 @@ def bench(p):
     print("zstd c %d ms d %d ms (%d B); lz4 c %d ms d %d ms (%d B)" % ((t1 - t) * 1e3, (t2 - t1) * 1e3, len(c), (t3 - t2) * 1e3, (t4 - t3) * 1e3, len(lc)))
 
 
-{"gen": lambda: gen(sys.argv[2], int(sys.argv[3]), int(sys.argv[4])), "verify": lambda: verify(sys.argv[2]), "corpus": lambda: corpus(sys.argv[2], int(sys.argv[3])), "bench": lambda: bench(sys.argv[2])}[sys.argv[1]]()
+{"gen": lambda: gen(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]) if len(sys.argv) > 5 else 2), "verify": lambda: verify(sys.argv[2]), "corpus": lambda: corpus(sys.argv[2], int(sys.argv[3])), "bench": lambda: bench(sys.argv[2])}[sys.argv[1]]()
