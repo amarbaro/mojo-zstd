@@ -50,6 +50,13 @@ read -r ok2 r2 <<< "$(low 128)" || { echo "FAIL stream: crashed"; exit 1; }
 [[ $ok1 == True && $ok2 == True ]] || { echo "FAIL stream: read-back checksum differs"; exit 1; }
 (( r2 < 2 * r1 && r2 - r1 < 1024 )) || { echo "FAIL stream: peak RSS ${r1} KB for 1 MiB, ${r2} KB for 128 MiB; want < 2x and < +1 MB"; exit 1; }
 echo "stream: 128 MiB written and read back through 128 KiB buffers, peak RSS ${r2} KB (${r1} KB for 1 MiB)"
+build rebase
+.work/rebase > /dev/null || { echo "FAIL rebase: encoder crashed with indices near 2^31"; exit 1; }
+$PY -c 'import zstandard as Z
+raw = open(".work/rb.raw", "rb").read()
+for lv in (1, 3, 12, 19):
+    assert Z.ZstdDecompressor().decompressobj().decompress(open(f".work/rb{lv}.zst", "rb").read()) == raw, lv' || { echo "FAIL rebase: output differs from the source under Python"; exit 1; }
+echo "rebase: indices crossing 2^31 mid-stream at levels 1, 3, 12, 19 decode to the source under Python"
 .work/api || { echo "FAIL api: tests/api.mojo"; exit 1; }
 $M run -I src examples/quickstart.mojo > /dev/null || { echo "FAIL example: examples/quickstart.mojo"; exit 1; }
 diff <(sed -n '/^```mojo$/,/^```$/p' README.md | sed '1d;$d') examples/quickstart.mojo > /dev/null || { echo "FAIL doc-test: README example differs from examples/quickstart.mojo"; exit 1; }

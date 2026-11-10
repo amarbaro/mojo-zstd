@@ -157,6 +157,10 @@ def rebase(mut e: Enc):
     for i in range(len(e.ct)):
         var v = Int(c[unsafe_offset=i])
         c[unsafe_offset=i] = UInt32(v - corr) if v > corr else 0
+    var t3 = e.o.h3.unsafe_ptr()
+    for i in range(len(e.o.h3)):
+        var v = Int(t3[unsafe_offset=i])
+        t3[unsafe_offset=i] = UInt32(v - corr) if v > corr else 0
     e.boff -= corr
 
 
