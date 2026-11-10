@@ -15,12 +15,11 @@ def main() raises:
     for lv in [1, 3, 12, 19]:
         var z = Zenc(lv)
         z.e.boff = (1 << 31) - 1_500_000
-        var fh = open(".work/rb" + String(lv) + ".zst", "w")
-        var i = 0
-        while i < n:
-            var k = min(100000, n - i)
-            z.write(Span(raw)[i : i + k], fh)
-            i += k
-        z.finish(fh)
-        fh.close()
+        with open(".work/rb" + String(lv) + ".zst", "w") as fh:
+            var i = 0
+            while i < n:
+                var k = min(100000, n - i)
+                z.write(Span(raw)[i : i + k], fh)
+                i += k
+            z.finish(fh)
     print("rebase: ok")

@@ -14,7 +14,7 @@ struct ZstdReader(Movable):
     memory is the zstd window, whatever the file size. Frames are read back to back."""
 
     var d: Zdec
-    var f: FileHandle
+    var f: Optional[FileHandle]  # None in memory mode
     var inb: List[UInt8]
     var ip: Int
     var ie: Int
@@ -25,7 +25,7 @@ struct ZstdReader(Movable):
 
     def __init__(out self, path: String) raises:
         self.d = Zdec(True)
-        self.f = FileHandle()
+        self.f = _open(path, "r")
         self.inb = List[UInt8](length=1 << 18, fill=0)
         self.ip = 0
         self.ie = 0
@@ -33,14 +33,10 @@ struct ZstdReader(Movable):
         self.dn = 0
         self.mem = False
         self.eof = False
-        try:
-            self.f = open(path, "r")
-        except:
-            raise Error("zstd: cannot open ", path)
 
     def __init__(out self, *, data: Span[UInt8, _]) raises:
         self.d = Zdec(True)
-        self.f = FileHandle()
+        self.f = None
         self.inb = List[UInt8]()
         self.ip = 0
         self.ie = 0
@@ -76,7 +72,7 @@ struct ZstdReader(Movable):
             self.ip = 0
         var k: Int
         try:
-            k = self.f.read(Span(self.inb)[self.ie :])
+            k = self.f.value().read(Span(self.inb)[self.ie :])
         except:
             raise Error("zstd: read error")
         if k == 0:
@@ -117,34 +113,37 @@ def decompress(data: Span[UInt8, _]) raises -> List[UInt8]:
     return res^
 
 
+def _open(path: String, mode: String) raises -> FileHandle:
+    try:
+        return open(path, mode)
+    except:
+        raise Error("zstd: cannot open ", path)
+
+
 struct ZstdWriter(Movable):
     """Compresses into a .zst file through a window buffer and a 128 KiB output buffer: memory is the zstd
     window, whatever the amount written. close() writes the frame end and reports I/O errors; dropping the
     writer without close() leaves a cut-off file."""
 
     var z: Zenc
-    var f: FileHandle
+    var f: Optional[FileHandle]  # None after close()
     var live: Bool
 
     def __init__(out self, path: String, level: Int = 3) raises:
         self.z = Zenc(level)
-        self.f = FileHandle()
-        self.live = False
-        try:
-            self.f = open(path, "w")
-        except:
-            raise Error("zstd: cannot open ", path)
+        self.f = _open(path, "w")
         self.live = True
 
     def write(mut self, data: Span[UInt8, _]) raises:
-        self.z.write(data, self.f)
+        self.z.write(data, self.f.value())
 
     def close(mut self) raises:
         if not self.live:
             return
         self.live = False
-        self.z.finish(self.f)
+        self.z.finish(self.f.value())
         try:
-            self.f.close()
+            with self.f.take():  # closes on exit: 1.3 close() consumes, 1.2 rejects f^
+                pass
         except:
             raise Error("zstd: close failed")
