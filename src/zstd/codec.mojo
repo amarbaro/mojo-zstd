@@ -3,8 +3,6 @@ from std.memory import unsafe_memcpy, unsafe_memmove
 from zstd.compress import Zenc, compress_all
 from zstd.decode import Zdec
 
-comptime _LIB = "libzstd.so.1"
-
 
 def compress(data: Span[UInt8, _], level: Int = 3) raises -> List[UInt8]:
     """One frame, with content size and checksum. Levels -131072..22 (clamped)."""

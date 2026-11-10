@@ -1,5 +1,5 @@
 """zstd block decoder (RFC 8878): literals, sequence tables, sequences. Accepts and rejects what libzstd 1.5.7
-does (BSD-2-Clause algorithms, Copyright Meta Platforms and Yann Collet; see NOTICE)."""
+does (BSD-3-Clause algorithms, Meta Platforms and Yann Collet; see NOTICE)."""
 from std.memory import unsafe_memcpy, unsafe_memset
 from zstd.fse import BitD, bad, build_table, hb, read_ncount
 from std.sys.defines import get_defined_int

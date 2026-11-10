@@ -1,5 +1,5 @@
 """Binary-tree match finder and optimal parser of zstd's btlazy2, btopt, btultra and btultra2 strategies
-(algorithms of libzstd's zstd_opt.c and the BT part of zstd_lazy.c; BSD-2-Clause, Yann Collet)."""
+(algorithms of libzstd's zstd_opt.c and the BT part of zstd_lazy.c; BSD-3-Clause, Meta Platforms and Yann Collet)."""
 from zstd.enc import Enc
 from zstd.finder import count, hashm, hc_find, r32
 from zstd.fse import hb

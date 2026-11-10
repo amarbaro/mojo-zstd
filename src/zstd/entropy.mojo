@@ -1,4 +1,4 @@
-"""Entropy encoders for zstd (RFC 8878; algorithms of libzstd's FSE and HUF compressors, BSD-2-Clause,
+"""Entropy encoders for zstd (RFC 8878; algorithms of libzstd's FSE and HUF compressors, BSD-3-Clause, Meta Platforms and
 Yann Collet): forward bit writer, FSE tables and the normalized-count header, Huffman tree, header, streams."""
 from std.memory import unsafe_memcpy
 from std.math import log2

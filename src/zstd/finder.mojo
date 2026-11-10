@@ -1,5 +1,5 @@
 """Match finders and parsers of zstd's fast, double-fast, greedy and lazy strategies (algorithms of
-libzstd's zstd_fast.c, zstd_double_fast.c, zstd_lazy.c; BSD-2-Clause, Yann Collet). Positions are offsets
+libzstd's zstd_fast.c, zstd_double_fast.c, zstd_lazy.c; BSD-3-Clause, Meta Platforms and Yann Collet). Positions are offsets
 into the buffer p; table entries are pos + e.boff, 0 meaning empty."""
 from std.bit import count_trailing_zeros
 from zstd.enc import Enc

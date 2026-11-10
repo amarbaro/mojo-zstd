@@ -5,6 +5,7 @@ from zstd.enc import Enc
 from zstd.fse import hb
 from zstd.finder import dfast, fast
 from zstd.opt import lazy, opt_parse
+from zstd.split import split_block
 from zstd.xxh64 import Xxh64
 
 comptime BLOCK = 1 << 17
@@ -165,6 +166,11 @@ def encode_blocks(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int, las
     var pos = start
     while True:
         var bn = min(BLOCK, end - pos)
+        if end - pos >= BLOCK and e.wlog >= 17 and e.savings >= 3:
+            # libzstd cuts a block early where the statistics change (levels: fast 0, dfast 1, greedy and lazy 2,
+            # lazy2 and btlazy2 3, the rest 4), once the frame has saved a few bytes
+            var lvl = 0 if e.strat == 1 else (1 if e.strat == 2 else (2 if e.strat <= 4 else (3 if e.strat <= 6 else 4)))
+            bn = split_block(p, pos, BLOCK, lvl)
         var is_last = last and pos + bn >= end
         if e.boff + pos > (1 << 31):
             rebase(e)
@@ -189,6 +195,7 @@ def encode_blocks(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int, las
             e.nlit = bn
         var w = e.block(p.unsafe_offset(pos), bn, out.unsafe_ptr().unsafe_offset(n0), is_last, r0, r1, r2)
         out.resize(unsafe_uninit_length=n0 + w)
+        e.savings += bn - w
         pos += bn
         if pos >= end:
             break
@@ -204,6 +211,7 @@ def compress_all(data: Span[UInt8, _], level: Int) raises -> List[UInt8]:
     var out = List[UInt8]()
     out.reserve(n // 2 + 64)
     put_header(out, e.wlog, n, True)
+    e.savings = -len(out)
     var p = data.unsafe_ptr().unsafe_mut_cast[False]()
     if n == 0:
         out.append(1)
@@ -263,6 +271,7 @@ struct Zenc(Movable):
     def write(mut self, data: Span[UInt8, _], mut f: FileHandle) raises:
         if not self.started:
             put_header(self.out, self.e.wlog, -1, True)
+            self.e.savings = -len(self.out)
             self.started = True
         var n = len(data)
         self.hash.update(data.unsafe_ptr().unsafe_mut_cast[False](), n)

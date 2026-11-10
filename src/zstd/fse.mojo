@@ -1,4 +1,4 @@
-"""Finite state entropy for zstd (RFC 8878, BSD-2-Clause algorithms of Yann Collet's FSE/zstd): the backward
+"""Finite state entropy for zstd (RFC 8878, BSD-3-Clause algorithms of Meta Platforms and Yann Collet's FSE/zstd): the backward
 bit reader, normalized-count headers, decoding tables, and the two-state weight stream of Huffman headers."""
 from std.bit import count_leading_zeros
 

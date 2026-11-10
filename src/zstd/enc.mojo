@@ -1,5 +1,5 @@
 """zstd block encoder: the sequence store, literals and sequences sections, FSE and Huffman table choice and
-reuse across blocks (RFC 8878; algorithms of libzstd's zstd_compress.c, BSD-2-Clause, Yann Collet)."""
+reuse across blocks (RFC 8878; algorithms of libzstd's zstd_compress.c, BSD-3-Clause, Meta Platforms and Yann Collet)."""
 from std.memory import unsafe_memcpy, unsafe_memset
 from zstd.block import ll_norm, ml_norm, of_norm, Dctx
 from zstd.entropy import BitC, FseC, HufC, fse_encode_all, normalize, optimal_log, write_ncount
@@ -123,6 +123,7 @@ struct Enc(Movable):
     var pend_huf: HufC
     var o: OptS
     var first: Bool  # no block written yet in this frame
+    var savings: Int  # input minus output bytes of the frame so far, header counted
     var mlbase: List[Int]
 
     def __init__(out self):
@@ -164,6 +165,7 @@ struct Enc(Movable):
         self.pend_huf = HufC()
         self.o = OptS()
         self.first = True
+        self.savings = 0
         self.mlbase = List[Int](length=53, fill=0)
         self.llcode = List[UInt8](length=128, fill=0)
         self.mlcode = List[UInt8](length=128, fill=0)
@@ -193,6 +195,7 @@ struct Enc(Movable):
         self.nseq = 0
         self.nlit = 0
         self.first = True
+        self.savings = 0
         self.o.lsum = 0
         self.o.llsum = 0
         self.o.mlsum = 0

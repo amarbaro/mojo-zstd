@@ -1,4 +1,4 @@
-"""Huffman literals for zstd (RFC 8878; algorithms of libzstd's HUF, BSD-2-Clause, Yann Collet): the weight
+"""Huffman literals for zstd (RFC 8878; algorithms of libzstd's HUF, BSD-3-Clause, Meta Platforms and Yann Collet): the weight
 header, a one-level decoding table of up to 12 bits, and the one- and four-stream backward decoders."""
 from std.memory import unsafe_memset
 from zstd.fse import BitD, bad, decode_weights, hb
