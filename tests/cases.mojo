@@ -6,6 +6,7 @@
 from std.sys import argv
 from std.os import getenv
 import lz4
+import lz4.codec
 import zstd
 
 
@@ -60,6 +61,10 @@ def run(d: String, job: List[String], mutant: Int, mut seed: Int) raises -> Stri
         save(d + "/our/" + name + "." + job[2], c)
         var back = zstd.decompress(c) if job[2] == "zst" else lz4.decompress(c)
         return String("ok ", len(back)) if same(back, raw) else String("error")
+    if op == "rtl" or op == "rtd" or op == "rti":  # lz4 encoder settings, byte-compared with python-lz4
+        var c = lz4.codec.compress_with(raw, 7 if op == "rtl" else (0 if op == "rtd" else 4), op != "rti", op != "rtd", op != "rti")
+        save(d + "/our/" + name + "." + op, c)
+        return String("ok ", len(raw)) if same(lz4.decompress(c), raw) else String("error")
     var w = zstd.ZstdWriter(d + "/our/" + name + ".stream.zst", 1 + seed % 19)
     var i = 0
     while i < len(raw):  # odd chunk sizes

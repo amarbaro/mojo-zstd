@@ -87,6 +87,11 @@ def body(rng, n):
     return bytes(s[:n])
 
 
+LZ4_ID = {"rtl": dict(block_size=7, content_checksum=True, block_linked=True, store_size=True),  # the API's frame
+          "rtd": {},  # python-lz4 defaults
+          "rti": dict(block_size=4, content_checksum=True, block_linked=False, store_size=False)}
+
+
 def bad(c, rng):
     k = rng.randrange(3)
     if k == 0 and c:
@@ -116,6 +121,9 @@ def gen(d, n, seed, bads=2):
         for k in ("zst", "lz4"):
             jobs.append(f"rt {name} {k}"); want.append(f"rt {name} {k} ok {len(r)}")
         jobs.append(f"stream {name}"); want.append(f"stream {name} ok {len(r)}")
+        for k, kw in LZ4_ID.items():  # lz4 encoder: same bytes as python-lz4 (liblz4 1.9.4) at three settings
+            jobs.append(f"{k} {name}"); want.append(f"{k} {name} ok {len(r)}")
+            open(f"{d}/ref/{name}.{k}", "wb").write(L.compress(r, **kw))
     for f, c in files.items():
         open(f"{d}/{f}", "wb").write(c)
         o = sysdec(c) if ".bad" in f and f.endswith(".zst") else dec(c, f[-3:])
@@ -140,6 +148,8 @@ def verify(d):
             want, got = open(f"{d}/ref/{name}", "rb").read(), open(f"{d}/out/{name}", "rb").read()
         elif op == "sdec":
             want, got = open(f"{d}/ref/{name}", "rb").read(), open(f"{d}/out/{name}.s", "rb").read()
+        elif op in LZ4_ID:  # byte for byte what python-lz4 writes
+            want, got = open(f"{d}/ref/{name}.{op}", "rb").read(), open(f"{d}/our/{name}.{op}", "rb").read()
         else:  # rt / stream: what we wrote must decode under Python to the source
             kind = rest[0] if op == "rt" else "zst"
             f = f"{d}/our/{name}.{kind}" if op == "rt" else f"{d}/our/{name}.stream.zst"
