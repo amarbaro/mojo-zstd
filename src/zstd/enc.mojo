@@ -3,7 +3,10 @@ reuse across blocks (RFC 8878; algorithms of libzstd's zstd_compress.c, BSD-2-Cl
 from std.memory import unsafe_memcpy, unsafe_memset
 from zstd.block import ll_norm, ml_norm, of_norm, Dctx
 from zstd.entropy import BitC, FseC, HufC, fse_encode_all, normalize, optimal_log, write_ncount
+from std.sys.defines import get_defined_int
 from zstd.fse import hb
+
+comptime MUTANT = get_defined_int["ZSTD_MUTANT", 0]()  # gate negative control: -D ZSTD_MUTANT=2 corrupts an FSE state
 
 
 struct OptS(Movable):
@@ -119,6 +122,7 @@ struct Enc(Movable):
     var mlb: List[Int]
     var pend_huf: HufC
     var o: OptS
+    var first: Bool  # no block written yet in this frame
     var mlbase: List[Int]
 
     def __init__(out self):
@@ -159,6 +163,7 @@ struct Enc(Movable):
         self.mlb = List[Int](length=53, fill=0)
         self.pend_huf = HufC()
         self.o = OptS()
+        self.first = True
         self.mlbase = List[Int](length=53, fill=0)
         self.llcode = List[UInt8](length=128, fill=0)
         self.mlcode = List[UInt8](length=128, fill=0)
@@ -187,6 +192,7 @@ struct Enc(Movable):
         self.pfse_ok = [False, False, False]
         self.nseq = 0
         self.nlit = 0
+        self.first = True
         self.o.lsum = 0
         self.o.llsum = 0
         self.o.mlsum = 0
@@ -272,7 +278,7 @@ struct Enc(Movable):
             top = max(top, cnt[s])
         if top == n and n > 1:  # one byte value
             return self._lit_small(dst, 1, n, Int(src[unsafe_offset=0]))
-        var min_lit = 6 if self.phuf_ok else 63
+        var min_lit = 6 if self.phuf_ok else 8  # libzstd waits for 8 << (9 - strategy) bytes; trying is cheap and costs no ratio
         if n >= min_lit:
             var minlog = (self.strat - 1) if self.strat >= 8 else 6
             var gain = (n >> minlog) + 2
@@ -464,6 +470,8 @@ struct Enc(Movable):
             so = tabs[1].init_state(ofc[last])
         if kinds[0] != 1:
             sl = tabs[0].init_state(llc[last])
+        comptime if MUTANT == 2:
+            so = so ^ 1
         b.add(Int(self.sll[last]), self.llbits(llc[last]))
         b.add(Int(self.sml[last]), self.mlbits(mlc[last]))
         b.add(Int(self.sof[last]), ofc[last])
@@ -520,9 +528,9 @@ struct Enc(Movable):
         var body = dst.unsafe_offset(3)
         var csize = 0
         var ok = False
+        var hnew = False
         if n > 0:
             var gain = (n >> ((self.strat - 1) if self.strat >= 8 else 6)) + 2
-            var hnew = False
             var ls = self.literals(body, hnew)
             var bits = 0
             for i in range(self.nseq):
@@ -530,23 +538,28 @@ struct Enc(Movable):
             if ls + 4 + bits // 8 + 8 < n + n // 8 + 1000 - 3:
                 var ss = self.sequences(body.unsafe_offset(ls))
                 csize = ls + ss
-                if csize < n - gain:
-                    ok = True
-                    self.commit(hnew, self.nseq > 0)
-        if ok:
+                ok = csize < n - gain
+        var same = n > 1
+        if same and (not ok or (csize < 25 and not self.first)):
+            for i in range(1, n):
+                if src[unsafe_offset=i] != src[unsafe_offset=0]:
+                    same = False
+                    break
+        else:
+            same = False
+        # a tiny compressed block of one repeated byte is better as an RLE block, except the first of a frame
+        if ok and not (same and csize < 25 and not self.first):
+            self.commit(hnew, self.nseq > 0)
+            self.first = False
             var h = lastbit | (2 << 1) | (csize << 3)
             dst[unsafe_offset=0] = UInt8(h & 255)
             dst[unsafe_offset=1] = UInt8((h >> 8) & 255)
             dst[unsafe_offset=2] = UInt8((h >> 16) & 255)
             return 3 + csize
+        self.first = False
         self.r0 = r0
         self.r1 = r1
         self.r2 = r2
-        var same = n > 1
-        for i in range(1, n):
-            if src[unsafe_offset=i] != src[unsafe_offset=0]:
-                same = False
-                break
         if same:
             var h = lastbit | (1 << 1) | (n << 3)
             dst[unsafe_offset=0] = UInt8(h & 255)

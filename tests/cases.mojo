@@ -61,6 +61,11 @@ def run(d: String, job: List[String], mutant: Int, mut seed: Int) raises -> Stri
         save(d + "/our/" + name + "." + job[2], c)
         var back = zstd.decompress(c) if job[2] == "zst" else lz4.decompress(c)
         return String("ok ", len(back)) if same(back, raw) else String("error")
+    if op == "zl":  # zstd encoder at the level in the job
+        var lv = Int(job[2])
+        var c = zstd.compress(raw, lv)
+        save(d + "/our/" + name + ".zl" + job[2], c)
+        return String("ok ", len(raw)) if same(zstd.decompress(c), raw) else String("error")
     if op == "rtl" or op == "rtd" or op == "rti":  # lz4 encoder settings, byte-compared with python-lz4
         var c = lz4.codec.compress_with(raw, 7 if op == "rtl" else (0 if op == "rtd" else 4), op != "rti", op != "rtd", op != "rti")
         save(d + "/our/" + name + "." + op, c)

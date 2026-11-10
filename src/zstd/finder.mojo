@@ -35,7 +35,7 @@ def count(p: ImmPointer[UInt8, _], a: Int, b: Int, limit: Int) -> Int:
 
 @always_inline
 def hashm(p: ImmPointer[UInt8, _], i: Int, bits: Int, mls: Int) -> Int:
-    if mls == 4:
+    if mls <= 4:
         return Int((r32(p, i) * 2654435761) >> UInt32(32 - bits))
     if mls == 5:
         return Int(((r64(p, i) << 24) * 889523592379) >> UInt64(64 - bits))

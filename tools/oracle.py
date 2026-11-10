@@ -93,6 +93,11 @@ LZ4_ID = {"rtl": dict(block_size=7, content_checksum=True, block_linked=True, st
           "rti": dict(block_size=4, content_checksum=True, block_linked=False, store_size=False)}
 
 
+ZL_SMALL = [-131072, -7, -1, 0, 1, 2, 3, 3, 4, 5, 6, 7, 9, 11, 12, 13, 15, 17, 19, 22, 25]
+ZL_BIG = {"text": [-131072, -5, -1] + list(range(1, 23)), "mixed": [1, 3, 7, 12, 19], "zeros": [1, 3, 9, 19], "noise": [1, 3, 9],
+          "empty": [1, 3, 19], "one": [1, 3, 19]}
+
+
 def bad(c, rng):
     k = rng.randrange(3)
     if k == 0 and c:
@@ -122,6 +127,8 @@ def gen(d, n, seed, bads=2):
         for k in ("zst", "lz4"):
             jobs.append(f"rt {name} {k}"); want.append(f"rt {name} {k} ok {len(r)}")
         jobs.append(f"stream {name}"); want.append(f"stream {name} ok {len(r)}")
+        for lv in ZL_BIG.get(name) or [random.Random(f"{seed}{name}").choice(ZL_SMALL)]:  # zstd encoder at many levels
+            jobs.append(f"zl {name} {lv}"); want.append(f"zl {name} {lv} ok {len(r)}")
         for k, kw in LZ4_ID.items():  # lz4 encoder: same bytes as python-lz4 (liblz4 1.9.4) at three settings
             jobs.append(f"{k} {name}"); want.append(f"{k} {name} ok {len(r)}")
             open(f"{d}/ref/{name}.{k}", "wb").write(L.compress(r, **kw))
@@ -166,7 +173,7 @@ def vec(d, flips, paths):
 
 
 def verify(d):
-    n = 0
+    n, worst, zl = 0, (0.0, "", 0), 0
     for line in open(f"{d}/want.txt").read().split("\n")[:-1]:
         op, name, *rest = line.split()
         if rest[0] == "error":
@@ -175,6 +182,18 @@ def verify(d):
             want, got = open(f"{d}/ref/{name}", "rb").read(), open(f"{d}/out/{name}", "rb").read()
         elif op == "sdec":
             want, got = open(f"{d}/ref/{name}", "rb").read(), open(f"{d}/out/{name}.s", "rb").read()
+        elif op == "zl":  # decodes to the source under Python, and within 5% (+16 bytes) of libzstd at the same level
+            lv = int(rest[0] if False else line.split()[2])
+            c = open(f"{d}/our/{name}.zl{lv}", "rb").read()
+            raw = open(f"{d}/{name}.raw", "rb").read()
+            want, got = raw, dec(c, "zst")
+            ref = len(Z.ZstdCompressor(level=min(lv, 22), write_checksum=True).compress(raw))
+            gap = (len(c) - ref) / max(ref, 1)
+            if len(c) > ref * 1.05 + 16:
+                print(f"FAIL verify: {line}: {len(c)} bytes against libzstd's {ref} ({gap * 100:+.1f}%)"); sys.exit(1)
+            zl += 1
+            if gap > worst[0]:
+                worst = (gap, name, lv)
         elif op in LZ4_ID:  # byte for byte what python-lz4 writes
             want, got = open(f"{d}/ref/{name}.{op}", "rb").read(), open(f"{d}/our/{name}.{op}", "rb").read()
         else:  # rt / stream: what we wrote must decode under Python to the source
@@ -184,7 +203,7 @@ def verify(d):
         if want != got:
             print(f"FAIL verify: {line}: bytes differ"); sys.exit(1)
         n += 1
-    print(f"verify: {n} outputs byte-identical to the oracle's")
+    print(f"verify: {n} outputs byte-identical to the oracle's; {zl} zstd encodes decode under Python, worst ratio gap to libzstd {worst[0] * 100:+.1f}% ({worst[1]} at level {worst[2]})")
 
 
 def corpus(p, mb):

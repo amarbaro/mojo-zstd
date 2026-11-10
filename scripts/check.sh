@@ -3,10 +3,13 @@
 # corrupted variants of each, with the oracle's verdict per job. tests/cases.mojo must print the same
 # verdict line for every job (dec, sdec, rt, stream) and its output bytes must equal the oracle's;
 # what it compresses must decode under Python to the source. Negative control: three planted bugs
-# (CASES_MUTANT) must each fail the same comparison. Then bounded streaming memory, API, example.
+# (CASES_MUTANT), a decoder and an encoder with one FSE state off (-D ZSTD_MUTANT) must each fail it. The
+# encoders: lz4 byte for byte against python-lz4 at three settings; zstd at 20+ levels decodes to the source under
+# Python and stays within 5% (+16 bytes) of libzstd's size. Then bounded streaming memory, API, example.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p .work
+exec > >(tee .work/native-gate.txt) 2>&1  # the whole run lands in .work/native-gate.txt
 M=${MOJO:-.venv/bin/mojo}; PY=".venv/bin/python -I"
 build() { $M build -I src "tests/$1.mojo" -o ".work/$1" 2>.work/build.err || { echo "FAIL build: tests/$1.mojo"; cat .work/build.err; exit 1; }; }
 for t in cases api stream; do build $t; done
@@ -33,6 +36,9 @@ done
 $M build -D ZSTD_MUTANT=1 -I src tests/cases.mojo -o .work/cases_mut 2>.work/build.err || { echo "FAIL build: mutant decoder"; cat .work/build.err; exit 1; }
 if CASES_BIN=.work/cases_mut compare .work/neg > .work/neg.out 2>&1; then echo "FAIL negative control: decoder with one FSE state off passed the gate"; exit 1; fi
 echo "negative control: decoder with one FSE state off rejected: $(head -c 100 .work/neg.out | head -1)"
+$M build -D ZSTD_MUTANT=2 -I src tests/cases.mojo -o .work/cases_mut2 2>.work/build.err || { echo "FAIL build: mutant encoder"; cat .work/build.err; exit 1; }
+if CASES_BIN=.work/cases_mut2 compare .work/neg > .work/neg.out 2>&1; then echo "FAIL negative control: encoder with one FSE state off passed the gate"; exit 1; fi
+echo "negative control: encoder with one FSE state off rejected: $(head -c 100 .work/neg.out | head -1)"
 rss() { $PY -c 'import resource, subprocess, sys
 o = subprocess.run(sys.argv[1:], capture_output=True, text=True, check=True).stdout.split()
 print(o[1] == o[2], resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)' "$@"; }
