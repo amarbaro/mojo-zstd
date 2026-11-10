@@ -1,6 +1,7 @@
 """zstd frames for Mojo. Decoding is pure Mojo; encoding still goes through libzstd until the native encoder lands."""
 from std.ffi import OwnedDLHandle, external_call
 from std.memory import unsafe_memcpy, unsafe_memmove
+from zstd.compress import compress_all
 from zstd.decode import Zdec
 
 comptime _LIB = "libzstd.so.1"
@@ -32,14 +33,8 @@ def _cctx(z: OwnedDLHandle, level: Int) raises -> Int:
 
 
 def compress(data: Span[UInt8, _], level: Int = 3) raises -> List[UInt8]:
-    """One frame, with content size and checksum. Levels -131072..22 (clamped by libzstd)."""
-    var z = OwnedDLHandle(_LIB)
-    var c = _cctx(z, level)
-    var out = List[UInt8](unsafe_uninit_length=z.call["ZSTD_compressBound", Int](len(data)))
-    var rc = z.call["ZSTD_compress2", Int](c, out.unsafe_ptr(), len(out), data.unsafe_ptr(), len(data))
-    _ = z.call["ZSTD_freeCCtx", Int](c)
-    out.resize(unsafe_uninit_length=_chk(z, rc))
-    return out^
+    """One frame, with content size and checksum. Levels -131072..22 (clamped)."""
+    return compress_all(data, level)
 
 
 struct ZstdReader(Movable):

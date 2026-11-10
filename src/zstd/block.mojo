@@ -8,16 +8,16 @@ from zstd import huf
 comptime MUTANT = get_defined_int["ZSTD_MUTANT", 0]()  # gate negative control: build with -D ZSTD_MUTANT=1
 
 
-def _ll_norm() -> List[Int]:
+def ll_norm() -> List[Int]:
     return [4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1]
 
 
-def _ml_norm() -> List[Int]:
+def ml_norm() -> List[Int]:
     return [1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1]
 
 
-def _of_norm() -> List[Int]:
+def of_norm() -> List[Int]:
     return [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1]
 
 
@@ -40,7 +40,7 @@ struct Dctx(Movable):
     var rep1: Int
     var rep2: Int
 
-    def __init__(out self) raises:
+    def __init__(out self):
         var lb = List[UInt32](length=36, fill=0)
         var lbits: List[UInt8] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         for i in range(16):
@@ -76,9 +76,9 @@ struct Dctx(Movable):
         self.rep0 = 1
         self.rep1 = 4
         self.rep2 = 8
-        build_table(_ll_norm(), 36, 6, self.dfl[0], self.base[0], self.bits[0])
-        build_table(_of_norm(), 29, 5, self.dfl[1], self.base[1], self.bits[1])
-        build_table(_ml_norm(), 53, 6, self.dfl[2], self.base[2], self.bits[2])
+        build_table(ll_norm(), 36, 6, self.dfl[0], self.base[0], self.bits[0])
+        build_table(of_norm(), 29, 5, self.dfl[1], self.base[1], self.bits[1])
+        build_table(ml_norm(), 53, 6, self.dfl[2], self.base[2], self.bits[2])
 
     def new_frame(mut self):
         self.fse_ok = False
