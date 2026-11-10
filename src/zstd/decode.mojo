@@ -178,10 +178,8 @@ struct Zdec(Movable):
                 raise bad("corrupt input")
             if n - ip - 3 < take:
                 return ip
-            var made: Int
-            if take == 0:
-                made = 0
-            else:
+            if take > 0:
+                var made: Int
                 self._room()
                 var o = self.out.unsafe_ptr()
                 var s = src.unsafe_offset(ip + 3)

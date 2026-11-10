@@ -379,7 +379,7 @@ struct Enc(Movable):
         """The sequences section for the stored sequences; returns its size. The tables it used wait in pend_*
         until commit() says the block was kept."""
         var n = self.nseq
-        var op = 0
+        var op: Int
         if n < 128:
             dst[unsafe_offset=0] = UInt8(n)
             op = 1

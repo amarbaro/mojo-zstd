@@ -1,35 +1,9 @@
-"""zstd frames for Mojo. Decoding is pure Mojo; encoding still goes through libzstd until the native encoder lands."""
-from std.ffi import OwnedDLHandle, external_call
+"""zstd frames for Mojo, in pure Mojo: no C library, no foreign calls."""
 from std.memory import unsafe_memcpy, unsafe_memmove
-from zstd.compress import compress_all
+from zstd.compress import Zenc, compress_all
 from zstd.decode import Zdec
 
 comptime _LIB = "libzstd.so.1"
-
-
-def _chk(z: OwnedDLHandle, rc: Int) raises -> Int:
-    if z.call["ZSTD_isError", UInt32](rc) != 0:
-        var p = z.call["ZSTD_getErrorName", Pointer[UInt8, ImmutAnyOrigin]](rc)
-        raise Error("zstd: ", String(unsafe_from_utf8=Span(unsafe_ptr=p, length=external_call["strlen", Int](p))))
-    return rc
-
-
-def _ints(a: Int, b: Int, c: Int) -> List[Int]:
-    return [a, b, c]
-
-
-def _cctx(z: OwnedDLHandle, level: Int) raises -> Int:
-    """A compression context at `level` that writes a content checksum into every frame."""
-    var c = z.call["ZSTD_createCCtx", Int]()
-    if c == 0:
-        raise Error("zstd: out of memory")
-    try:
-        _ = _chk(z, z.call["ZSTD_CCtx_setParameter", Int](c, Int32(100), Int32(level)))
-        _ = _chk(z, z.call["ZSTD_CCtx_setParameter", Int](c, Int32(201), Int32(1)))
-    except e:
-        _ = z.call["ZSTD_freeCCtx", Int](c)
-        raise e^
-    return c
 
 
 def compress(data: Span[UInt8, _], level: Int = 3) raises -> List[UInt8]:
@@ -146,49 +120,33 @@ def decompress(data: Span[UInt8, _]) raises -> List[UInt8]:
 
 
 struct ZstdWriter(Movable):
-    """Compresses into a .zst file through a fixed 128 KiB output buffer. close() writes the
-    frame end and reports I/O errors; dropping the writer without close() leaves a cut-off file."""
+    """Compresses into a .zst file through a window buffer and a 128 KiB output buffer: memory is the zstd
+    window, whatever the amount written. close() writes the frame end and reports I/O errors; dropping the
+    writer without close() leaves a cut-off file."""
 
-    var z: OwnedDLHandle
-    var c: Int  # ZSTD_CCtx*
-    var f: Int  # FILE*
-    var buf: List[UInt8]
+    var z: Zenc
+    var f: FileHandle
+    var live: Bool
 
     def __init__(out self, path: String, level: Int = 3) raises:
-        self.z = OwnedDLHandle(_LIB)
-        self.c = 0
-        self.buf = List[UInt8](length=1 << 17, fill=0)
-        var p = path.copy()
-        var m = String("wb")
-        self.f = external_call["fopen", Int](p.as_c_string_span().ptr(), m.as_c_string_span().ptr())
-        if self.f == 0:
+        self.z = Zenc(level)
+        self.f = FileHandle()
+        self.live = False
+        try:
+            self.f = open(path, "w")
+        except:
             raise Error("zstd: cannot open ", path)
-        self.c = _cctx(self.z, level)
+        self.live = True
 
     def write(mut self, data: Span[UInt8, _]) raises:
-        self._run(Int(data.unsafe_ptr()), len(data), 0)
+        self.z.write(data, self.f)
 
     def close(mut self) raises:
-        if self.f == 0:
+        if not self.live:
             return
-        self._run(0, 0, 2)
-        if external_call["fclose", Int32](self.f) != 0:
-            self.f = 0
+        self.live = False
+        self.z.finish(self.f)
+        try:
+            self.f.close()
+        except:
             raise Error("zstd: close failed")
-        self.f = 0
-
-    def _run(mut self, src: Int, n: Int, op: Int32) raises:
-        var i = _ints(src, n, 0)
-        var o = _ints(Int(self.buf.unsafe_ptr()), len(self.buf), 0)
-        while True:
-            o[2] = 0
-            var rc = _chk(self.z, self.z.call["ZSTD_compressStream2", Int](self.c, o.unsafe_ptr(), i.unsafe_ptr(), op))
-            if external_call["fwrite", Int](self.buf.unsafe_ptr(), 1, o[2], self.f) != o[2]:
-                raise Error("zstd: write error")
-            if (rc == 0) if op == 2 else (i[2] == i[1]):
-                break
-
-    def __deinit__(deinit self):
-        _ = self.z.call["ZSTD_freeCCtx", Int](self.c)
-        if self.f != 0:
-            _ = external_call["fclose", Int32](self.f)

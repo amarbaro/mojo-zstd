@@ -73,7 +73,7 @@ def fast(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int) -> Int:
         var h0 = hashm(p, ip0, hl, mls)
         var h1 = hashm(p, ip1, hl, mls)
         var midx = Int(ht[unsafe_offset=h0]) - boff
-        var cur0 = ip0
+        var cur0: Int
         var mpos = 0
         var ml = 0
         var found = 0  # 1: repeat offset, 2: table match, 0: none
@@ -170,9 +170,7 @@ def dfast(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int) -> Int:
         hs[unsafe_offset=h] = UInt32(curr + boff)
         var low = max(0, curr - maxd)
         var ml: Int
-        var off: Int
         var r1 = e.r0
-        var found = False
         if ip + 1 - r1 >= low and r32(p, ip + 1) == r32(p, ip + 1 - r1):
             ml = count(p, ip + 5, ip + 5 - r1, end) + 4
             ip += 1
@@ -182,7 +180,6 @@ def dfast(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int) -> Int:
             if mlong >= low and r64(p, mlong) == r64(p, ip):
                 ml = count(p, ip + 8, mlong + 8, end) + 8
                 m = mlong
-                found = True
             elif mshort >= low and r32(p, mshort) == r32(p, ip):
                 var h3 = hashm(p, ip + 1, lbits, 8)
                 var m3 = Int(hl[unsafe_offset=h3]) - boff
@@ -194,7 +191,6 @@ def dfast(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int) -> Int:
                 else:
                     ml = count(p, ip + 4, mshort + 4, end) + 4
                     m = mshort
-                found = True
             else:
                 ip += ((ip - anchor) >> 8) + 1
                 continue

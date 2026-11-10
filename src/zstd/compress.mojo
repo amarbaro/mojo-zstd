@@ -217,3 +217,84 @@ def compress_all(data: Span[UInt8, _], level: Int) raises -> List[UInt8]:
     for k in range(4):
         out.append(UInt8((d >> (8 * k)) & 255))
     return out^
+
+
+struct Zenc(Movable):
+    """Streaming encoder: input is copied into a window buffer (the last window of history plus room for two
+    blocks), compressed block by block, and the output is handed to a file as it grows."""
+
+    var e: Enc
+    var buf: List[UInt8]
+    var blen: Int
+    var bpos: Int
+    var hist: Int
+    var cap: Int
+    var out: List[UInt8]
+    var hash: Xxh64
+    var started: Bool
+
+    def __init__(out self, level: Int):
+        self.e = Enc()
+        set_params(self.e, level, -1)
+        self.hist = 1 << self.e.wlog
+        self.cap = self.hist + 2 * BLOCK
+        self.buf = List[UInt8](length=self.cap + 64, fill=0)
+        self.blen = 0
+        self.bpos = 0
+        self.out = List[UInt8]()
+        self.hash = Xxh64()
+        self.started = False
+
+    def _flush(mut self, mut f: FileHandle, force: Bool) raises:
+        if len(self.out) >= (1 << 17) or (force and len(self.out) > 0):
+            try:
+                f.write_all(Span(self.out))
+            except:
+                raise Error("zstd: write error")
+            self.out.clear()
+
+    def _blocks(mut self, mut f: FileHandle) raises:
+        var p = self.buf.unsafe_ptr().unsafe_mut_cast[False]()
+        while self.blen - self.bpos >= BLOCK:
+            encode_blocks(self.e, p, self.bpos, self.bpos + BLOCK, False, self.out)
+            self.bpos += BLOCK
+            self._flush(f, False)
+
+    def write(mut self, data: Span[UInt8, _], mut f: FileHandle) raises:
+        if not self.started:
+            put_header(self.out, self.e.wlog, -1, True)
+            self.started = True
+        var n = len(data)
+        self.hash.update(data.unsafe_ptr().unsafe_mut_cast[False](), n)
+        var i = 0
+        while i < n:
+            var k = min(n - i, self.cap - self.blen)
+            unsafe_memcpy(dest=self.buf.unsafe_ptr().unsafe_offset(self.blen), src=data.unsafe_ptr().unsafe_offset(i).unsafe_mut_cast[False](), count=k)
+            self.blen += k
+            i += k
+            self._blocks(f)
+            if self.blen == self.cap:  # full: drop what is older than the window
+                var shift = self.bpos - min(self.bpos, self.hist)
+                var b = self.buf.unsafe_ptr()
+                unsafe_memmove(dest=b, src=b.unsafe_offset(shift).unsafe_origin_cast[MutUntrackedOrigin](), count=self.blen - shift)
+                self.blen -= shift
+                self.bpos -= shift
+                self.e.boff += shift
+                self.e.upd = max(self.e.upd - shift, 0)
+                self.e.o.nupd3 = max(self.e.o.nupd3 - shift, 0)
+
+    def finish(mut self, mut f: FileHandle) raises:
+        if not self.started:
+            put_header(self.out, self.e.wlog, -1, True)
+            self.started = True
+        var p = self.buf.unsafe_ptr().unsafe_mut_cast[False]()
+        if self.blen > self.bpos:
+            encode_blocks(self.e, p, self.bpos, self.blen, True, self.out)
+        else:
+            self.out.append(1)
+            self.out.append(0)
+            self.out.append(0)
+        var d = Int(self.hash.digest() & 0xFFFFFFFF)
+        for k in range(4):
+            self.out.append(UInt8((d >> (8 * k)) & 255))
+        self._flush(f, True)

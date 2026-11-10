@@ -240,7 +240,6 @@ def bt_all(
         var lastr = 3 + (1 if ll0 else 0)
         for rc in range(1 if ll0 else 0, lastr):
             var ro = r0 - 1 if rc == 3 else (r0 if rc == 0 else (r1 if rc == 1 else r2))
-            var ri = ip - ro
             var rl = 0
             if ro >= 1 and ro <= ip and curr - ro >= wlow:
                 if minm == 3:
@@ -356,9 +355,6 @@ def opt_parse(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int, lvl: In
     var lml = 0
     var lof = 0
     var lll = 0
-    var lr0 = 0
-    var lr1 = 0
-    var lr2 = 0
     while ip < ilimit:
         var cur = 0
         var last_pos = 0
@@ -493,9 +489,6 @@ def opt_parse(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int, lvl: In
                 lll = e.o.nll[last_pos]
                 lml = e.o.nml[last_pos]
                 lof = e.o.noff[last_pos]
-                lr0 = e.o.nr0[last_pos]
-                lr1 = e.o.nr1[last_pos]
-                lr2 = e.o.nr2[last_pos]
                 cur = last_pos - lml
         # the cheapest path is chosen: store it
         if lml == 0:
@@ -582,12 +575,10 @@ def lazy[bt: Bool](mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int, de
         if depth >= 1:
             while ip < ilimit:
                 ip += 1
-                var cur_code = off if off > 0 else r1  # distance in use
-                var gain1: Int
                 if off > 0 and ip - r1 >= max(0, ip - maxd) and r32(p, ip) == r32(p, ip - r1):
                     var mr = count(p, ip + 4, ip + 4 - r1, end) + 4
                     var g2 = mr * 3
-                    gain1 = ml * 3 - hb(off + 3) + 1
+                    var gain1 = ml * 3 - hb(off + 3) + 1
                     if mr >= 4 and g2 > gain1:
                         ml = mr
                         off = 0
