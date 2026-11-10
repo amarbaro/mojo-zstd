@@ -37,15 +37,16 @@ def main() raises:
 ```
 <!-- /install -->
 
-Read and write zstd and lz4 frames from Mojo. It calls the system `libzstd.so.1` and
-`liblz4.so.1`, loaded at run time, so `mojo run` and `mojo build` need no linker flag.
-230 lines in `src/`. Every result is checked against Python `zstandard` and `lz4` on 24075 jobs,
-including bit-flipped, truncated and trailing-garbage input.
+Read and write zstd and lz4 frames from Mojo, in pure Mojo: no C library, no foreign calls, no linker
+flag. Both codecs are ports of the reference algorithms (4.0k lines in `src/`). Every result is
+checked against Python `zstandard` and `lz4`, including bit-flipped, truncated and trailing-garbage
+input: decoding agrees with libzstd and liblz4 on what is valid and on what is not, lz4 encoding is
+byte for byte python-lz4's, zstd encoding decodes under Python and stays within 5% of libzstd's size
+at every level.
 
 This is `examples/quickstart.mojo`; `scripts/check.sh` runs it.
 
-Requires Mojo 1.2 on Linux, `libzstd.so.1` and `liblz4.so.1` (present on desktop and server
-distros; no `-dev` package).
+Requires Mojo 1.2. Nothing else: no system library, no `-dev` package.
 
 ## What you get
 
@@ -64,7 +65,7 @@ decompress 34 to 36 ms (Python 38 to 42); lz4 compress 36 to 44 ms (Python 44), 
 libraries underneath, so the claim is parity, not a faster codec. Peak RSS 113 MB against 123 MB.
 Streaming 128 MiB through `ZstdWriter` and `ZstdReader` peaks at 13.7 MB, the same as 1 MiB.
 
-**Limits:** Linux only, with the host's `libzstd.so.1` and `liblz4.so.1`. Not covered: dictionaries, multithreading, the lz4 block format, lz4 levels.
+**Limits:** inputs under 2 GiB for `compress`. Not covered: dictionaries, multithreading, long-distance matching, the lz4 block format, lz4 levels.
 
 ## Checks
 

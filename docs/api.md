@@ -6,7 +6,7 @@ Import with `import zstd` and `import lz4`. All errors are `Error` with prefix `
 
 | Item | Does | Raises |
 |---|---|---|
-| `compress(data: Span[UInt8, _], level: Int = 3) -> List[UInt8]` | One frame with content size and checksum. Level -131072..22, clamped by libzstd. | zstd error |
+| `compress(data: Span[UInt8, _], level: Int = 3) -> List[UInt8]` | One frame with content size and checksum. Level -131072..22, clamped. | zstd error |
 | `decompress(data: Span[UInt8, _]) -> List[UInt8]` | Every frame of `data`, concatenated. | corrupt, truncated or trailing non-zstd data |
 | `ZstdReader(path: String)` | Open a `.zst` file for streaming. | cannot open |
 | `ZstdReader(*, data: Span[UInt8, _])` | Stream from a buffer you keep alive. | out of memory |

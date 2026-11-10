@@ -1,7 +1,7 @@
 [project]
 name = "mojo-zstd"
 version = "0.1.1"
-description = "zstd and lz4 frame compression for Mojo through the system libzstd and liblz4"
+description = "zstd and lz4 frame compression for Mojo, pure Mojo with no C library"
 license = "Apache-2.0"
 requires-python = ">=3.11,<3.15"
 dependencies = ["mojo>=1.2.0,<1.3"]

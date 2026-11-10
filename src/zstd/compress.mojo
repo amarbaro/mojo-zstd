@@ -246,7 +246,7 @@ struct Zenc(Movable):
         set_params(self.e, level, -1)
         self.hist = 1 << self.e.wlog
         self.cap = self.hist + 2 * BLOCK
-        self.buf = List[UInt8](length=self.cap + 64, fill=0)
+        self.buf = List[UInt8](unsafe_uninit_length=self.cap + 64)  # untouched until input arrives
         self.blen = 0
         self.bpos = 0
         self.out = List[UInt8]()

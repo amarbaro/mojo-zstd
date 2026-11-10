@@ -38,7 +38,7 @@ about:
   homepage: https://github.com/amarbaro/mojo-zstd
   license: Apache-2.0
   license_file: LICENSE
-  summary: zstd and lz4 frame compression for Mojo through the system libzstd and liblz4
+  summary: zstd and lz4 frame compression for Mojo, pure Mojo with no C library
   repository: https://github.com/amarbaro/mojo-zstd
 
 extra:

@@ -3,7 +3,7 @@
   vec DIR FLIPBYTES FILE...  fixtures from existing .zst files, plus every single-bit flip of those up to FLIPBYTES long
   verify DIR      cases.mojo's out/ and our/ files against ref/ and the sources
   corpus FILE MB  seeded word-salad text, the bench input
-  bench FILE      the work of tests/bench.mojo, in Python"""
+  bench FILE [levels]  the work of tests/bench.mojo, in Python"""
 import ctypes, os, random, resource, sys, time
 import lz4.frame as L
 import zstandard as Z
@@ -213,6 +213,15 @@ def corpus(p, mb):
     open(p, "wb").write(b" ".join(w)[: mb << 20])
 
 
+def bench_levels(p):
+    raw = open(p, "rb").read()[: 4 << 20]
+    for lv in (1, 9, 19):
+        t = time.perf_counter(); c = Z.ZstdCompressor(level=lv, write_checksum=True).compress(raw)
+        t1 = time.perf_counter(); Z.ZstdDecompressor().decompress(c)
+        t2 = time.perf_counter()
+        print("L %d c %d ms d %d ms ( %d B )" % (lv, (t1 - t) * 1e3, (t2 - t1) * 1e3, len(c)))
+
+
 def bench(p):
     raw = open(p, "rb").read()
     t = time.perf_counter(); c = Z.ZstdCompressor(level=3, write_checksum=True).compress(raw)
@@ -223,4 +232,4 @@ def bench(p):
     print("zstd c %d ms d %d ms (%d B); lz4 c %d ms d %d ms (%d B)" % ((t1 - t) * 1e3, (t2 - t1) * 1e3, len(c), (t3 - t2) * 1e3, (t4 - t3) * 1e3, len(lc)))
 
 
-{"gen": lambda: gen(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]) if len(sys.argv) > 5 else 2), "vec": lambda: vec(sys.argv[2], int(sys.argv[3]), sys.argv[4:]), "verify": lambda: verify(sys.argv[2]), "corpus": lambda: corpus(sys.argv[2], int(sys.argv[3])), "bench": lambda: bench(sys.argv[2])}[sys.argv[1]]()
+{"gen": lambda: gen(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]) if len(sys.argv) > 5 else 2), "vec": lambda: vec(sys.argv[2], int(sys.argv[3]), sys.argv[4:]), "verify": lambda: verify(sys.argv[2]), "corpus": lambda: corpus(sys.argv[2], int(sys.argv[3])), "bench": lambda: bench_levels(sys.argv[2]) if len(sys.argv) > 3 else bench(sys.argv[2])}[sys.argv[1]]()

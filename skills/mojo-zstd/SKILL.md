@@ -1,19 +1,20 @@
 ---
 name: mojo-zstd
-description: "zstd and lz4 frame compression for Mojo through the system libzstd/liblz4: .zst and .lz4 files, in-memory buffers, bounded-memory streaming. Use when Mojo code must read or write zstd or lz4 data."
+description: "zstd and lz4 frame compression for Mojo, pure Mojo with no C library: .zst and .lz4 files, in-memory buffers, bounded-memory streaming. Use when Mojo code must read or write zstd or lz4 data."
 metadata:
-  short-description: "zstd and lz4 frames for Mojo via system libzstd/liblz4; files, buffers, streaming"
+  short-description: "zstd and lz4 frames for Mojo, pure Mojo, no C library; files, buffers, streaming"
 ---
 
 # mojo-zstd
 
-zstd and lz4 frames for Mojo 1.2 on Linux. Needs `libzstd.so.1` and `liblz4.so.1` on the host,
-loaded at run time: no linker flag.
+zstd and lz4 frames for Mojo 1.2, written in Mojo: no C library, no foreign calls, no linker flag, any
+host Mojo runs on. Decoding matches libzstd and liblz4 on valid and corrupt input; lz4 encoding is byte for
+byte python-lz4's; zstd encoding is valid zstd within 5% of libzstd's size at every level (not its bytes).
 
 ## When to use
 
 Read or write `.zst` / `.lz4` data, in memory or streamed in bounded memory.
-Not for dictionaries, threads, the lz4 block format or other OSes.
+Not for dictionaries, threads, long-distance matching, the lz4 block format, lz4 levels.
 
 ## Install
 
@@ -52,4 +53,4 @@ def main() raises:
 ## Gate
 
 `scripts/check.sh` from the repo must end with `PASS all` (oracle comparison against Python's zstd and
-lz4 bindings, mutants, a bounded-memory stream, the README example). `scripts/bench.sh` for speed.
+lz4 bindings and libzstd's golden vectors, mutants, a bounded-memory stream, the README example). `scripts/bench.sh` for speed.

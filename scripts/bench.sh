@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# tests/bench.mojo vs tools/oracle.py bench on the same 32 MiB text corpus, 3 runs each: each prints
-# its own timed work in ms; peak RSS of the whole process from getrusage.
+# tests/bench.mojo vs tools/oracle.py bench on the same 32 MiB text corpus, 3 runs each (levels 1, 9, 19 on
+# 4 MiB once): each prints its own timed work in ms; peak RSS of the whole process from getrusage; the load
+# average at the end says how much to trust the numbers.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p .work
@@ -14,3 +15,6 @@ print("%-7s %s, peak RSS %d MB" % (sys.argv[1], out, resource.getrusage(resource
     || { echo "FAIL run: $1"; exit 1; }
 }
 for i in 1 2 3; do run mojo .work/bench "$IN"; run python .venv/bin/python -I tools/oracle.py bench "$IN"; done
+run mojo .work/bench "$IN" levels   # levels 1, 9, 19 on the first 4 MiB, once
+run python .venv/bin/python -I tools/oracle.py bench "$IN" levels
+echo "load average at the end: $(cut -d" " -f1-3 /proc/loadavg)"
