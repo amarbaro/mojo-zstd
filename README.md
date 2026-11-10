@@ -72,7 +72,7 @@ table: [docs/perf.md](docs/perf.md).
 
 | Script | What |
 |---|---|
-| `scripts/check.sh` | 32136 verdict lines identical to `tools/oracle.py` (10851 corrupt inputs rejected by both), 21285 outputs byte-identical, zstd at 25 levels within 5% of libzstd, lz4 byte for byte, 12679 bit-flipped reference frames, 5 planted bugs rejected, indices past 2^31, streaming RSS, API errors, example |
+| `scripts/check.sh` | 32136 verdict lines identical to `tools/oracle.py` (10851 corrupt inputs rejected by both), 21285 outputs byte-identical, zstd at 25 levels within 5% of libzstd, lz4 byte for byte, 13716 bit-flipped reference frames, 5 planted bugs rejected, indices past 2^31, streaming RSS, API errors, example |
 | `scripts/bench.sh` | the speed numbers above, 3 runs each, peak RSS |
 | `scripts/ci.sh` | install and gate, same on GitHub and a local VM |
 
