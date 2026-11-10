@@ -168,6 +168,14 @@ struct FseC(Copyable, Movable):
                 self.fs[s] = total - n
                 total += n
 
+    def build_rle(mut self, nsym: Int):
+        """The table of a single repeated symbol: no state bits at all."""
+        self.log = 0
+        self.pr = List[Int](length=nsym, fill=0)
+        self.st = List[UInt16](length=2, fill=0)
+        self.nb = List[Int](length=nsym, fill=0)
+        self.fs = List[Int](length=nsym, fill=0)
+
     @always_inline
     def init_state(self, sym: Int) -> Int:
         var nbo = (self.nb[sym] + (1 << 15)) >> 16

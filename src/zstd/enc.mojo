@@ -274,8 +274,19 @@ struct Enc(Movable):
             dst[unsafe_offset=0] = 0
             return 1
         var cnt = List[Int](length=256, fill=0)
-        for i in range(n):
-            cnt[Int(src[unsafe_offset=i])] += 1
+        var c4 = List[Int](length=1024, fill=0)  # four interleaved histograms: no dependency between neighbours
+        var i4 = 0
+        while i4 + 4 <= n:
+            c4[Int(src[unsafe_offset=i4])] += 1
+            c4[256 + Int(src[unsafe_offset=i4 + 1])] += 1
+            c4[512 + Int(src[unsafe_offset=i4 + 2])] += 1
+            c4[768 + Int(src[unsafe_offset=i4 + 3])] += 1
+            i4 += 4
+        while i4 < n:
+            c4[Int(src[unsafe_offset=i4])] += 1
+            i4 += 1
+        for s in range(256):
+            cnt[s] = c4[s] + c4[256 + s] + c4[512 + s] + c4[768 + s]
         var top = 0
         for s in range(256):
             top = max(top, cnt[s])
@@ -407,13 +418,20 @@ struct Enc(Movable):
         var ofc = List[Int](length=n, fill=0)
         var mlc = List[Int](length=n, fill=0)
         var cnts = [List[Int](length=36, fill=0), List[Int](length=32, fill=0), List[Int](length=53, fill=0)]
+        var llt = self.llcode.unsafe_ptr()
+        var mlt = self.mlcode.unsafe_ptr()
         for i in range(n):
-            llc[i] = self.ll_code(Int(self.sll[i]))
-            ofc[i] = hb(Int(self.sof[i]))
-            mlc[i] = self.ml_code(Int(self.sml[i]))
-            cnts[0][llc[i]] += 1
-            cnts[1][ofc[i]] += 1
-            cnts[2][mlc[i]] += 1
+            var l = Int(self.sll[i])
+            var m = Int(self.sml[i])
+            var a = Int(llt[unsafe_offset=l]) if l < 128 else hb(l) + 19
+            var c = Int(mlt[unsafe_offset=m]) if m < 128 else self.ml_code(m)
+            var o = hb(Int(self.sof[i]))
+            llc[i] = a
+            ofc[i] = o
+            mlc[i] = c
+            cnts[0][a] += 1
+            cnts[1][o] += 1
+            cnts[2][c] += 1
         var modes_at = op
         op += 1
         var modes = 0
@@ -445,6 +463,7 @@ struct Enc(Movable):
                     if cnts[kind][s] == n:
                         dst[unsafe_offset=op] = UInt8(s)
                 op += 1
+                tabs[kind].build_rle(nsym)
                 self.pend_ok[kind] = False
             elif mode == 2:
                 unsafe_memcpy(dest=dst.unsafe_offset(op), src=hdr.unsafe_ptr().unsafe_mut_cast[False](), count=hlen)
@@ -463,44 +482,57 @@ struct Enc(Movable):
         dst[unsafe_offset=modes_at] = UInt8(modes)
         # bitstream: the sequences backwards, the three states initialised from the last one
         var b = BitC(dst.unsafe_offset(op))
-        var sl = 0
-        var so = 0
-        var sm = 0
         var last = n - 1
-        if kinds[2] != 1:
-            sm = tabs[2].init_state(mlc[last])
-        if kinds[1] != 1:
-            so = tabs[1].init_state(ofc[last])
-        if kinds[0] != 1:
-            sl = tabs[0].init_state(llc[last])
+        var sm = tabs[2].init_state(mlc[last])
+        var so = tabs[1].init_state(ofc[last])
+        var sl = tabs[0].init_state(llc[last])
         comptime if MUTANT == 2:
             so = so ^ 1
         b.add(Int(self.sll[last]), self.llbits(llc[last]))
         b.add(Int(self.sml[last]), self.mlbits(mlc[last]))
         b.add(Int(self.sof[last]), ofc[last])
         b.flush()
+        var sllp = self.sll.unsafe_ptr()
+        var smlp = self.sml.unsafe_ptr()
+        var sofp = self.sof.unsafe_ptr()
+        var llcp = llc.unsafe_ptr()
+        var ofcp = ofc.unsafe_ptr()
+        var mlcp = mlc.unsafe_ptr()
+        var llbp = self.llb.unsafe_ptr()
+        var mlbp = self.mlb.unsafe_ptr()
+        var lst = tabs[0].st.unsafe_ptr()
+        var lnb = tabs[0].nb.unsafe_ptr()
+        var lfs = tabs[0].fs.unsafe_ptr()
+        var ost = tabs[1].st.unsafe_ptr()
+        var onb = tabs[1].nb.unsafe_ptr()
+        var ofs = tabs[1].fs.unsafe_ptr()
+        var mst = tabs[2].st.unsafe_ptr()
+        var mnb = tabs[2].nb.unsafe_ptr()
+        var mfs = tabs[2].fs.unsafe_ptr()
         for i in range(n - 2, -1, -1):
-            if kinds[1] != 1:
-                tabs[1].put(b, so, ofc[i])
-            if kinds[2] != 1:
-                tabs[2].put(b, sm, mlc[i])
-            if kinds[0] != 1:
-                tabs[0].put(b, sl, llc[i])
+            var oc = Int(ofcp[unsafe_offset=i])
+            var mc = Int(mlcp[unsafe_offset=i])
+            var lc = Int(llcp[unsafe_offset=i])
+            var nbo = (so + onb[unsafe_offset=oc]) >> 16
+            b.add(so, nbo)
+            so = Int(ost[unsafe_offset=(so >> nbo) + ofs[unsafe_offset=oc]])
+            nbo = (sm + mnb[unsafe_offset=mc]) >> 16
+            b.add(sm, nbo)
+            sm = Int(mst[unsafe_offset=(sm >> nbo) + mfs[unsafe_offset=mc]])
+            nbo = (sl + lnb[unsafe_offset=lc]) >> 16
+            b.add(sl, nbo)
+            sl = Int(lst[unsafe_offset=(sl >> nbo) + lfs[unsafe_offset=lc]])
+            b.add(Int(sllp[unsafe_offset=i]), Int(llbp[unsafe_offset=lc]))
+            b.add(Int(smlp[unsafe_offset=i]), Int(mlbp[unsafe_offset=mc]))
             b.flush()
-            b.add(Int(self.sll[i]), self.llbits(llc[i]))
-            b.add(Int(self.sml[i]), self.mlbits(mlc[i]))
+            b.add(Int(sofp[unsafe_offset=i]), oc)
             b.flush()
-            b.add(Int(self.sof[i]), ofc[i])
-            b.flush()
-        if kinds[2] != 1:
-            b.add(sm, tabs[2].log)
-            b.flush()
-        if kinds[1] != 1:
-            b.add(so, tabs[1].log)
-            b.flush()
-        if kinds[0] != 1:
-            b.add(sl, tabs[0].log)
-            b.flush()
+        b.add(sm, tabs[2].log)
+        b.flush()
+        b.add(so, tabs[1].log)
+        b.flush()
+        b.add(sl, tabs[0].log)
+        b.flush()
         return op + b.close()
 
     def llbits(self, code: Int) -> Int:
@@ -526,7 +558,7 @@ struct Enc(Movable):
         mut self, src: ImmPointer[UInt8, _], n: Int, dst: MutPointer[UInt8, _], last: Bool, r0: Int, r1: Int, r2: Int
     ) -> Int:
         """Writes the block holding src[0:n] (parsed into the store) with its 3-byte header at dst; returns the
-        size. dst needs n + n / 8 + 1024 bytes. r0..r2 are the repeat offsets from before the block."""
+        size. dst needs the larger of n + n / 8 and nlit + 12 * nseq, plus 1024 bytes. r0..r2 are the repeat offsets from before the block."""
         var lastbit = 1 if last else 0
         var body = dst.unsafe_offset(3)
         var csize = 0
@@ -535,13 +567,9 @@ struct Enc(Movable):
         if n > 0:
             var gain = (n >> ((self.strat - 1) if self.strat >= 8 else 6)) + 2
             var ls = self.literals(body, hnew)
-            var bits = 0
-            for i in range(self.nseq):
-                bits += self.llbits(self.ll_code(Int(self.sll[i]))) + self.mlbits(self.ml_code(Int(self.sml[i]))) + hb(Int(self.sof[i])) + 26
-            if ls + 4 + bits // 8 + 8 < n + n // 8 + 1000 - 3:
-                var ss = self.sequences(body.unsafe_offset(ls))
-                csize = ls + ss
-                ok = csize < n - gain
+            var ss = self.sequences(body.unsafe_offset(ls))
+            csize = ls + ss
+            ok = csize < n - gain
         var same = n > 1
         if same and (not ok or (csize < 25 and not self.first)):
             for i in range(1, n):

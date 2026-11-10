@@ -180,7 +180,6 @@ def encode_blocks(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int, las
         var r1 = e.r1
         var r2 = e.r2
         var n0 = len(out)
-        out.resize(unsafe_uninit_length=n0 + bn + bn // 8 + 1024)
         if bn >= 16:
             var anchor = parse(e, p, pos, pos + bn)
             var tail = pos + bn - anchor
@@ -193,6 +192,8 @@ def encode_blocks(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int, las
                 e.lits.resize(unsafe_uninit_length=e.nlit + bn + 64 + len(e.lits))
             unsafe_memcpy(dest=e.lits.unsafe_ptr(), src=p.unsafe_offset(pos), count=bn)
             e.nlit = bn
+        # room for the worst case: the literals, 12 bytes per sequence at most, headers
+        out.resize(unsafe_uninit_length=n0 + max(bn + bn // 8, e.nlit + 12 * e.nseq) + 1024)
         var w = e.block(p.unsafe_offset(pos), bn, out.unsafe_ptr().unsafe_offset(n0), is_last, r0, r1, r2)
         out.resize(unsafe_uninit_length=n0 + w)
         e.savings += bn - w
