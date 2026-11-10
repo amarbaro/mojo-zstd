@@ -59,11 +59,12 @@ API: [docs/api.md](docs/api.md). Design: [docs/design.md](docs/design.md). Numbe
 
 ## Performance
 
-32 MiB text, `scripts/bench.sh`, 3 runs: zstd level 3 compress 61 to 63 ms (Python 61 to 66),
-decompress 34 to 36 ms (Python 38 to 42); lz4 compress 36 to 44 ms (Python 44), decompress
-29 to 35 ms (Python 40 to 44). One mojo zstd run read 179 ms compress, a noisy outlier. Same
-libraries underneath, so the claim is parity, not a faster codec. Peak RSS 113 MB against 123 MB.
-Streaming 128 MiB through `ZstdWriter` and `ZstdReader` peaks at 13.7 MB, the same as 1 MiB.
+32 MiB text, `scripts/bench.sh`, level 3, on a busy box (load 12 to 13 on 16 cores): zstd compress 84 to 95 ms
+(libzstd via Python 56 to 87), decompress 48 to 73 ms (35 to 50); lz4 compress 28 to 37 ms (38 to 46),
+decompress 27 to 41 ms (34 to 38). Output size is within 5% of libzstd's at every level (worst 1.9% on four
+test inputs); lz4 output is byte for byte python-lz4's. Peak RSS 123 MB against 124 MB. Streaming 128 MiB
+through `ZstdWriter` and `ZstdReader` peaks at 14.2 MB, against 13.5 MB for 1 MiB. Details and the per-level
+table: [docs/perf.md](docs/perf.md).
 
 **Limits:** inputs under 2 GiB for `compress`. Not covered: dictionaries, multithreading, long-distance matching, the lz4 block format, lz4 levels.
 
@@ -71,7 +72,7 @@ Streaming 128 MiB through `ZstdWriter` and `ZstdReader` peaks at 13.7 MB, the sa
 
 | Script | What |
 |---|---|
-| `scripts/check.sh` | 24075 verdict lines identical to `tools/oracle.py` (10851 corrupt inputs rejected by both), 13224 outputs byte-identical, 3 planted bugs rejected, streaming RSS, API errors, example |
+| `scripts/check.sh` | 32136 verdict lines identical to `tools/oracle.py` (10851 corrupt inputs rejected by both), 21285 outputs byte-identical, zstd at 25 levels within 5% of libzstd, lz4 byte for byte, 12679 bit-flipped reference frames, 5 planted bugs rejected, indices past 2^31, streaming RSS, API errors, example |
 | `scripts/bench.sh` | the speed numbers above, 3 runs each, peak RSS |
 | `scripts/ci.sh` | install and gate, same on GitHub and a local VM |
 
