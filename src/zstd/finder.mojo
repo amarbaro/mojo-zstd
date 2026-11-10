@@ -47,52 +47,102 @@ def hashm(p: ImmPointer[UInt8, _], i: Int, bits: Int, mls: Int) -> Int:
 
 
 def fast(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int) -> Int:
-    """ZSTD_compressBlock_fast over p[start:end]; returns the position where the unmatched tail begins."""
+    """ZSTD_compressBlock_fast_noDict_generic over p[start:end]: positions are searched in a software pipeline
+    of four, the step grows every 128 bytes without a match. Returns where the unmatched tail begins."""
     var ht = e.ht.unsafe_ptr()
-    var hb_ = e.hlog
+    var hl = e.hlog
     var mls = min(max(e.mml, 4), 7)
-    var step0 = e.tlen + (1 if e.tlen == 0 else 0) + 1
+    var step_size = e.tlen + (1 if e.tlen == 0 else 0) + 1
     var maxd = 1 << e.wlog
     var boff = e.boff
     var ilimit = end - 8
-    var ip = start
+    var ip0 = start
     var anchor = start
     if start + boff == 0:
-        ip += 1
-    while ip < ilimit:
-        var h = hashm(p, ip, hb_, mls)
-        var cand = Int(ht[unsafe_offset=h]) - boff
-        var curr = ip
-        ht[unsafe_offset=h] = UInt32(curr + boff)
-        var low = max(0, curr - maxd)
-        var ml: Int
-        var r1 = e.r0
-        if ip + 1 - r1 >= low and r32(p, ip + 1) == r32(p, ip + 1 - r1):
-            ml = count(p, ip + 5, ip + 5 - r1, end) + 4
-            ip += 1
-            e.store(p, anchor, ip - anchor, r1, ml)
-        else:
-            if cand < low or r32(p, cand) != r32(p, ip):
-                ip += ((ip - anchor) >> 8) + step0
-                continue
-            ml = count(p, ip + 4, cand + 4, end) + 4
-            while ip > anchor and cand > low and p[unsafe_offset=ip - 1] == p[unsafe_offset=cand - 1]:
-                ip -= 1
-                cand -= 1
+        ip0 += 1
+    while True:
+        var low = max(0, ip0 - maxd)
+        var r1 = e.r0 if e.r0 <= ip0 - low else 0
+        var step = step_size
+        var next_step = ip0 + 128
+        var ip1 = ip0 + 1
+        var ip2 = ip0 + step
+        var ip3 = ip2 + 1
+        if ip3 >= ilimit:
+            break
+        var h0 = hashm(p, ip0, hl, mls)
+        var h1 = hashm(p, ip1, hl, mls)
+        var midx = Int(ht[unsafe_offset=h0]) - boff
+        var cur0 = ip0
+        var mpos = 0
+        var ml = 0
+        var found = 0  # 1: repeat offset, 2: table match, 0: none
+        while True:
+            cur0 = ip0
+            ht[unsafe_offset=h0] = UInt32(cur0 + boff)
+            if r1 > 0 and r32(p, ip2) == r32(p, ip2 - r1):
+                ip0 = ip2
+                mpos = ip0 - r1
+                var back = 1 if p[unsafe_offset=ip0 - 1] == p[unsafe_offset=mpos - 1] else 0
+                ip0 -= back
+                mpos -= back
+                ml = 4 + back
+                ht[unsafe_offset=h1] = UInt32(ip1 + boff)
+                found = 1
+                break
+            if midx >= low and r32(p, ip0) == r32(p, midx):
+                ht[unsafe_offset=h1] = UInt32(ip1 + boff)
+                mpos = midx
+                found = 2
+                break
+            midx = Int(ht[unsafe_offset=h1]) - boff
+            h0 = h1
+            h1 = hashm(p, ip2, hl, mls)
+            ip0 = ip1
+            ip1 = ip2
+            ip2 = ip3
+            cur0 = ip0
+            ht[unsafe_offset=h0] = UInt32(cur0 + boff)
+            if midx >= low and r32(p, ip0) == r32(p, midx):
+                if step <= 4:
+                    ht[unsafe_offset=h1] = UInt32(ip1 + boff)
+                mpos = midx
+                found = 2
+                break
+            midx = Int(ht[unsafe_offset=h1]) - boff
+            h0 = h1
+            h1 = hashm(p, ip2, hl, mls)
+            ip0 = ip1
+            ip1 = ip2
+            ip2 = ip0 + step
+            ip3 = ip1 + step
+            if ip2 >= next_step:
+                step += 1
+                next_step += 128
+            if ip3 >= ilimit:
+                break
+        if found == 0:
+            break
+        if found == 2:
+            ml = 4
+            while ip0 > anchor and mpos > low and p[unsafe_offset=ip0 - 1] == p[unsafe_offset=mpos - 1]:
+                ip0 -= 1
+                mpos -= 1
                 ml += 1
-            e.store(p, anchor, ip - anchor, ip - cand, ml)
-        ip += ml
-        anchor = ip
-        if ip <= ilimit:
-            ht[unsafe_offset=hashm(p, curr + 2, hb_, mls)] = UInt32(curr + 2 + boff)
-            ht[unsafe_offset=hashm(p, ip - 2, hb_, mls)] = UInt32(ip - 2 + boff)
-            while ip <= ilimit and ip - e.r1 >= max(0, ip - maxd) and r32(p, ip) == r32(p, ip - e.r1):
+        ml += count(p, ip0 + ml, mpos + ml, end)
+        e.store(p, anchor, ip0 - anchor, ip0 - mpos, ml)
+        ip0 += ml
+        anchor = ip0
+        if ip0 <= ilimit:
+            ht[unsafe_offset=hashm(p, cur0 + 2, hl, mls)] = UInt32(cur0 + 2 + boff)
+            ht[unsafe_offset=hashm(p, ip0 - 2, hl, mls)] = UInt32(ip0 - 2 + boff)
+            while ip0 <= ilimit and e.r1 > 0 and ip0 - e.r1 >= max(0, ip0 - maxd) and r32(p, ip0) == r32(p, ip0 - e.r1):
                 var r2 = e.r1
-                var ml2 = count(p, ip + 4, ip + 4 - r2, end) + 4
-                ht[unsafe_offset=hashm(p, ip, hb_, mls)] = UInt32(ip + boff)
-                e.store(p, ip, 0, r2, ml2)
-                ip += ml2
-                anchor = ip
+                var ml2 = count(p, ip0 + 4, ip0 + 4 - r2, end) + 4
+                ht[unsafe_offset=hashm(p, ip0, hl, mls)] = UInt32(ip0 + boff)
+                e.store(p, ip0, 0, r2, ml2)
+                ip0 += ml2
+                anchor = ip0
     return anchor
 
 
@@ -215,99 +265,3 @@ def hc_find(mut e: Enc, p: ImmPointer[UInt8, _], ip: Int, end: Int, mut off: Int
             break
         idx = Int(ct[unsafe_offset=idx & cmask])
     return best if best >= 4 else 0
-
-
-def lazy(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int, depth: Int) -> Int:
-    """ZSTD_compressBlock_lazy_generic: greedy (depth 0), lazy (1) or lazy2 (2) over the hash-chain finder."""
-    var ilimit = end - 8
-    var ip = start
-    var anchor = start
-    var maxd = 1 << e.wlog
-    if start + e.boff == 0:
-        ip += 1
-    while ip < ilimit:
-        var ml = 0
-        var off = 0  # distance of the best match; 0 stands for the first repeat offset
-        var st = ip + 1
-        var r1 = e.r0
-        if ip + 1 - r1 >= max(0, ip + 1 - maxd) and r32(p, ip + 1) == r32(p, ip + 1 - r1):
-            ml = count(p, ip + 5, ip + 5 - r1, end) + 4
-            if depth == 0:
-                e.store(p, anchor, st - anchor, r1, ml)
-                ip = st + ml
-                anchor = ip
-                while ip <= ilimit and ip - e.r1 >= max(0, ip - maxd) and r32(p, ip) == r32(p, ip - e.r1):
-                    var r2 = e.r1
-                    var ml2 = count(p, ip + 4, ip + 4 - r2, end) + 4
-                    e.store(p, ip, 0, r2, ml2)
-                    ip += ml2
-                    anchor = ip
-                continue
-        var o2 = 0
-        var ml2 = hc_find(e, p, ip, end, o2)
-        if ml2 > ml:
-            ml = ml2
-            st = ip
-            off = o2
-        if ml < 4:
-            ip += ((ip - anchor) >> 8) + 1
-            continue
-        if depth >= 1:
-            while ip < ilimit:
-                ip += 1
-                var cur_code = off if off > 0 else r1  # distance in use
-                var gain1: Int
-                if off > 0 and ip - r1 >= max(0, ip - maxd) and r32(p, ip) == r32(p, ip - r1):
-                    var mr = count(p, ip + 4, ip + 4 - r1, end) + 4
-                    var g2 = mr * 3
-                    gain1 = ml * 3 - hb(off + 3) + 1
-                    if mr >= 4 and g2 > gain1:
-                        ml = mr
-                        off = 0
-                        st = ip
-                var o3 = 0
-                var m3 = hc_find(e, p, ip, end, o3)
-                var cur = off if off > 0 else r1
-                var g1 = ml * 4 - hb(cur + 3) + 4
-                var g3 = m3 * 4 - hb(o3 + 3)
-                if m3 >= 4 and g3 > g1:
-                    ml = m3
-                    off = o3
-                    st = ip
-                    continue
-                if depth == 2 and ip < ilimit:
-                    ip += 1
-                    if off > 0 and ip - r1 >= max(0, ip - maxd) and r32(p, ip) == r32(p, ip - r1):
-                        var mr = count(p, ip + 4, ip + 4 - r1, end) + 4
-                        var g2 = mr * 4
-                        var gg1 = ml * 4 - hb(off + 3) + 1
-                        if mr >= 4 and g2 > gg1:
-                            ml = mr
-                            off = 0
-                            st = ip
-                    var o4 = 0
-                    var m4 = hc_find(e, p, ip, end, o4)
-                    var cur2 = off if off > 0 else r1
-                    var g4 = m4 * 4 - hb(o4 + 3)
-                    var g1b = ml * 4 - hb(cur2 + 3) + 7
-                    if m4 >= 4 and g4 > g1b:
-                        ml = m4
-                        off = o4
-                        st = ip
-                        continue
-                break
-        var dist = off if off > 0 else r1
-        if off > 0:
-            while st > anchor and st - dist > max(0, st - maxd) and p[unsafe_offset=st - 1] == p[unsafe_offset=st - dist - 1]:
-                st -= 1
-                ml += 1
-        e.store(p, anchor, st - anchor, dist, ml)
-        ip = st + ml
-        anchor = ip
-        while ip <= ilimit and ip - e.r1 >= max(0, ip - maxd) and r32(p, ip) == r32(p, ip - e.r1):
-            var r2 = e.r1
-            var ml3 = count(p, ip + 4, ip + 4 - r2, end) + 4
-            e.store(p, ip, 0, r2, ml3)
-            ip += ml3
-            anchor = ip
-    return anchor

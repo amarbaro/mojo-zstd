@@ -3,7 +3,8 @@ checksum. One engine serves compress() over a whole buffer and ZstdWriter over a
 from std.memory import unsafe_memcpy, unsafe_memmove
 from zstd.enc import Enc
 from zstd.fse import hb
-from zstd.finder import dfast, fast, lazy
+from zstd.finder import dfast, fast
+from zstd.opt import lazy, opt_parse
 from zstd.xxh64 import Xxh64
 
 comptime BLOCK = 1 << 17
@@ -83,6 +84,10 @@ def set_params(mut e: Enc, level: Int, size: Int):
     e.ct = List[UInt32]()
     if e.strat >= 2:
         e.ct = List[UInt32](length=1 << e.clog, fill=0)
+    if e.strat >= 6:
+        e.o.alloc()
+        if e.mml == 3:
+            e.o.h3 = List[UInt32](length=1 << min(17, e.hlog), fill=0)
     e.boff = 0
     e.upd = 0
     e.reset_frame()
@@ -93,7 +98,29 @@ def parse(mut e: Enc, p: ImmPointer[UInt8, _], start: Int, end: Int) -> Int:
         return fast(e, p, start, end)
     if e.strat == 2:
         return dfast(e, p, start, end)
-    return lazy(e, p, start, end, 0 if e.strat == 3 else (1 if e.strat == 4 else 2))
+    if e.strat <= 5:
+        return lazy[False](e, p, start, end, 0 if e.strat == 3 else (1 if e.strat == 4 else 2))
+    if e.strat == 6:
+        return lazy[True](e, p, start, end, 2)
+    if e.strat == 9 and e.boff + start == 0 and e.o.llsum == 0 and end - start > 8:
+        # btultra2: a first pass over the block only to learn the statistics, then parse again without history
+        var r0 = e.r0
+        var r1 = e.r1
+        var r2 = e.r2
+        _ = opt_parse(e, p, start, end, 2)
+        e.nseq = 0
+        e.nlit = 0
+        e.r0 = r0
+        e.r1 = r1
+        e.r2 = r2
+        e.boff += end - start
+        e.upd = start
+        e.o.nupd3 = start
+        for i in range(len(e.ht)):
+            e.ht[i] = 0
+        for i in range(len(e.ct)):
+            e.ct[i] = 0
+    return opt_parse(e, p, start, end, 0 if e.strat == 7 else 2)
 
 
 def put_header(mut out: List[UInt8], wlog: Int, size: Int, checksum: Bool):

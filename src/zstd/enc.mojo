@@ -6,6 +6,73 @@ from zstd.entropy import BitC, FseC, HufC, fse_encode_all, normalize, optimal_lo
 from zstd.fse import hb
 
 
+struct OptS(Movable):
+    """Statistics and scratch of the optimal parser (zstd_opt.c: optState_t, price and match tables)."""
+
+    var lfreq: List[Int]
+    var llf: List[Int]
+    var mlf: List[Int]
+    var off_f: List[Int]
+    var lsum: Int
+    var llsum: Int
+    var mlsum: Int
+    var ofsum: Int
+    var lbp: Int
+    var llbp: Int
+    var mlbp: Int
+    var ofbp: Int
+    var predef: Bool
+    var price: List[Int]  # the nodes of the price table
+    var noff: List[Int]
+    var nml: List[Int]
+    var nll: List[Int]
+    var nr0: List[Int]
+    var nr1: List[Int]
+    var nr2: List[Int]
+    var mlen: List[Int]  # matches found at one position, longest last
+    var moff: List[Int]
+    var h3: List[UInt32]
+    var nupd3: Int
+
+    def __init__(out self):
+        self.lfreq = List[Int](length=256, fill=0)
+        self.llf = List[Int](length=36, fill=0)
+        self.mlf = List[Int](length=53, fill=0)
+        self.off_f = List[Int](length=32, fill=0)
+        self.lsum = 0
+        self.llsum = 0
+        self.mlsum = 0
+        self.ofsum = 0
+        self.lbp = 0
+        self.llbp = 0
+        self.mlbp = 0
+        self.ofbp = 0
+        self.predef = False
+        self.price = List[Int]()
+        self.noff = List[Int]()
+        self.nml = List[Int]()
+        self.nll = List[Int]()
+        self.nr0 = List[Int]()
+        self.nr1 = List[Int]()
+        self.nr2 = List[Int]()
+        self.mlen = List[Int]()
+        self.moff = List[Int]()
+        self.h3 = List[UInt32]()
+        self.nupd3 = 0
+
+    def alloc(mut self):
+        var n = 4096 + 8
+        self.price = List[Int](length=n, fill=0)
+        self.noff = List[Int](length=n, fill=0)
+        self.nml = List[Int](length=n, fill=0)
+        self.nll = List[Int](length=n, fill=0)
+        self.nr0 = List[Int](length=n, fill=0)
+        self.nr1 = List[Int](length=n, fill=0)
+        self.nr2 = List[Int](length=n, fill=0)
+        self.mlen = List[Int](length=n, fill=0)
+        self.moff = List[Int](length=n, fill=0)
+
+
 def _enc_lits(h: HufC, src: ImmPointer[UInt8, _], n: Int, four: Bool, dst: MutPointer[UInt8, _]) -> Int:
     return h.encode4(src, n, dst) if four else h.encode(src, n, dst)
 
@@ -51,6 +118,7 @@ struct Enc(Movable):
     var llb: List[Int]
     var mlb: List[Int]
     var pend_huf: HufC
+    var o: OptS
     var mlbase: List[Int]
 
     def __init__(out self):
@@ -90,6 +158,7 @@ struct Enc(Movable):
         self.llb = List[Int](length=36, fill=0)
         self.mlb = List[Int](length=53, fill=0)
         self.pend_huf = HufC()
+        self.o = OptS()
         self.mlbase = List[Int](length=53, fill=0)
         self.llcode = List[UInt8](length=128, fill=0)
         self.mlcode = List[UInt8](length=128, fill=0)
@@ -118,6 +187,11 @@ struct Enc(Movable):
         self.pfse_ok = [False, False, False]
         self.nseq = 0
         self.nlit = 0
+        self.o.lsum = 0
+        self.o.llsum = 0
+        self.o.mlsum = 0
+        self.o.ofsum = 0
+        self.o.nupd3 = 0
 
     def ll_code(self, ll: Int) -> Int:
         if ll < 128:
