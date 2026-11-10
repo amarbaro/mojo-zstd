@@ -13,7 +13,7 @@ for t in cases api stream; do build $t; done
 compare() {  # compare DIR: run tests/cases on DIR, diff its verdicts and bytes against the oracle's
   local d=$1
   rm -rf "$d/out" "$d/our"; mkdir "$d/out" "$d/our"
-  .work/cases "$d" > "$d/got.txt" 2> "$d/got.err" || { echo "FAIL cases: crashed: $(head -c 300 "$d/got.err")"; return 1; }
+  ${CASES_BIN:-.work/cases} "$d" > "$d/got.txt" 2> "$d/got.err" || { echo "FAIL cases: crashed: $(head -c 300 "$d/got.err")"; return 1; }
   cmp -s "$d/got.txt" "$d/want.txt" || { echo "FAIL oracle: $(diff "$d/got.txt" "$d/want.txt" | head -3 | tr '\n' ' ')"; return 1; }
   $PY tools/oracle.py verify "$d"
 }
@@ -21,11 +21,18 @@ rm -rf .work/fx .work/neg
 $PY tools/oracle.py gen .work/fx 2000 1 || { echo "FAIL setup: oracle gen"; exit 1; }
 compare .work/fx || exit 1
 echo "oracle: $(grep -c '' .work/fx/want.txt) jobs, verdict lines identical ($(grep -c ' error$' .work/fx/want.txt) rejected as corrupt by both)"
+rm -rf .work/vec
+$PY tools/oracle.py vec .work/vec 200 tests/vectors/*.zst > /dev/null || { echo "FAIL setup: oracle vec"; exit 1; }
+compare .work/vec || exit 1
+echo "vectors: $(ls tests/vectors | wc -l) reference frames (zstd repo golden files, decodecorpus) and $(( $(grep -c '' .work/vec/want.txt) / 2 )) bit-flipped variants: verdicts and bytes identical"
 $PY tools/oracle.py gen .work/neg 60 2 > /dev/null
 for m in 1 2 3; do
   if CASES_MUTANT=$m compare .work/neg > .work/neg.out 2>&1; then echo "FAIL negative control: mutant $m passed the gate"; exit 1; fi
   echo "negative control: mutant $m rejected: $(head -c 100 .work/neg.out | head -1)"
 done
+$M build -D ZSTD_MUTANT=1 -I src tests/cases.mojo -o .work/cases_mut 2>.work/build.err || { echo "FAIL build: mutant decoder"; cat .work/build.err; exit 1; }
+if CASES_BIN=.work/cases_mut compare .work/neg > .work/neg.out 2>&1; then echo "FAIL negative control: decoder with one FSE state off passed the gate"; exit 1; fi
+echo "negative control: decoder with one FSE state off rejected: $(head -c 100 .work/neg.out | head -1)"
 rss() { $PY -c 'import resource, subprocess, sys
 o = subprocess.run(sys.argv[1:], capture_output=True, text=True, check=True).stdout.split()
 print(o[1] == o[2], resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)' "$@"; }

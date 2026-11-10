@@ -1,5 +1,7 @@
-"""zstd frames for Mojo through the system libzstd.so.1, loaded at run time (no linker flag)."""
+"""zstd frames for Mojo. Decoding is pure Mojo; encoding still goes through libzstd until the native encoder lands."""
 from std.ffi import OwnedDLHandle, external_call
+from std.memory import unsafe_memcpy, unsafe_memmove
+from zstd.decode import Zdec
 
 comptime _LIB = "libzstd.so.1"
 
@@ -41,76 +43,111 @@ def compress(data: Span[UInt8, _], level: Int = 3) raises -> List[UInt8]:
 
 
 struct ZstdReader(Movable):
-    """Decompresses a .zst file (or, via `data=`, a buffer) through a fixed 128 KiB input buffer:
+    """Decompresses a .zst file (or, via `data=`, a buffer) through a fixed 256 KiB input buffer:
     memory is the zstd window, whatever the file size. Frames are read back to back."""
 
-    var z: OwnedDLHandle
-    var d: Int  # ZSTD_DCtx*
-    var f: Int  # FILE*, 0 when reading from memory
-    var inb: List[Int]  # ZSTD_inBuffer {src, size, pos}
-    var buf: List[UInt8]
-    var rc: Int  # last ZSTD_decompressStream hint; nonzero = inside a frame
+    var d: Zdec
+    var f: FileHandle
+    var inb: List[UInt8]
+    var ip: Int
+    var ie: Int
+    var data: ImmPointer[UInt8, ImmUntrackedOrigin]  # memory mode: the whole input
+    var dn: Int
+    var mem: Bool
+    var eof: Bool
 
     def __init__(out self, path: String) raises:
-        self.z = OwnedDLHandle(_LIB)
-        self.d = self.z.call["ZSTD_createDCtx", Int]()
-        self.buf = List[UInt8](length=1 << 17, fill=0)
-        self.inb = _ints(Int(self.buf.unsafe_ptr()), 0, 0)
-        self.rc = 1
-        var p = path.copy()
-        var m = String("rb")
-        self.f = external_call["fopen", Int](p.as_c_string_span().ptr(), m.as_c_string_span().ptr())
-        if self.f == 0 or self.d == 0:
+        self.d = Zdec(True)
+        self.f = FileHandle()
+        self.inb = List[UInt8](length=1 << 18, fill=0)
+        self.ip = 0
+        self.ie = 0
+        self.data = self.inb.unsafe_ptr().unsafe_mut_cast[False]().unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.dn = 0
+        self.mem = False
+        self.eof = False
+        try:
+            self.f = open(path, "r")
+        except:
             raise Error("zstd: cannot open ", path)
 
     def __init__(out self, *, data: Span[UInt8, _]) raises:
-        self.z = OwnedDLHandle(_LIB)
-        self.d = self.z.call["ZSTD_createDCtx", Int]()
-        self.buf = List[UInt8]()
-        self.inb = _ints(Int(data.unsafe_ptr()), len(data), 0)
-        self.rc = 1
-        self.f = 0
-        if self.d == 0:
-            raise Error("zstd: out of memory")
+        self.d = Zdec(True)
+        self.f = FileHandle()
+        self.inb = List[UInt8]()
+        self.ip = 0
+        self.ie = 0
+        self.data = data.unsafe_ptr().unsafe_mut_cast[False]().unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.dn = len(data)
+        self.mem = True
+        self.eof = False
+
+    def _more(mut self) raises -> Bool:
+        """Decode more; False at the end of the input."""
+        var before = self.d.op
+        if self.mem:
+            var c = self.d.parse(self.data.unsafe_offset(self.ip), self.dn - self.ip)
+            self.ip += c
+            if c > 0 or self.d.op != before:
+                return True
+            if self.ip < self.dn or not self.d.idle():
+                raise Error("zstd: truncated input")
+            return False
+        var c = self.d.parse(self.inb.unsafe_ptr().unsafe_mut_cast[False]().unsafe_offset(self.ip), self.ie - self.ip)
+        self.ip += c
+        if c > 0 or self.d.op != before:
+            return True
+        if self.d.rd < self.d.op:
+            return True
+        if self.eof:
+            if self.ip < self.ie or not self.d.idle():
+                raise Error("zstd: truncated input")
+            return False
+        if self.ip > 0:
+            unsafe_memmove(dest=self.inb.unsafe_ptr(), src=self.inb.unsafe_ptr().unsafe_offset(self.ip).unsafe_origin_cast[MutUntrackedOrigin](), count=self.ie - self.ip)
+            self.ie -= self.ip
+            self.ip = 0
+        var k: Int
+        try:
+            k = self.f.read(Span(self.inb)[self.ie :])
+        except:
+            raise Error("zstd: read error")
+        if k == 0:
+            self.eof = True
+        self.ie += k
+        return True
 
     def read(mut self, buf: Span[mut=True, UInt8, _]) raises -> Int:
         """Fills buf from the start; returns the bytes written, 0 at the end. Raises on corrupt
         or truncated data."""
-        var o = _ints(Int(buf.unsafe_ptr()), len(buf), 0)
-        while o[2] < o[1]:
-            if self.f != 0 and self.inb[2] == self.inb[1]:
-                self.inb[1] = external_call["fread", Int](self.buf.unsafe_ptr(), 1, len(self.buf), self.f)
-                self.inb[2] = 0
-                if self.inb[1] < len(self.buf) and external_call["ferror", Int32](self.f) != 0:
-                    raise Error("zstd: read error")
-            var before = self.inb[2] + o[2]
-            var rc = _chk(self.z, self.z.call["ZSTD_decompressStream", Int](self.d, o.unsafe_ptr(), self.inb.unsafe_ptr()))
-            if self.inb[2] + o[2] == before:  # no progress: input is used up
-                if self.rc != 0:
-                    raise Error("zstd: truncated input")
+        var n = 0
+        while n < len(buf):
+            if self.d.rd < self.d.op:
+                var k = min(len(buf) - n, self.d.op - self.d.rd)
+                unsafe_memcpy(dest=buf.unsafe_ptr().unsafe_offset(n), src=self.d.out.unsafe_ptr().unsafe_offset(self.d.rd).unsafe_origin_cast[MutUntrackedOrigin](), count=k)
+                self.d.rd += k
+                n += k
+            elif not self._more():
                 break
-            self.rc = rc
-        return o[2]
-
-    def __deinit__(deinit self):
-        _ = self.z.call["ZSTD_freeDCtx", Int](self.d)
-        if self.f != 0:
-            _ = external_call["fclose", Int32](self.f)
+        return n
 
 
 def decompress(data: Span[UInt8, _]) raises -> List[UInt8]:
     """Every frame of data, concatenated. Raises on corrupt, truncated or trailing non-zstd data."""
-    var r = ZstdReader(data=data)
-    var n = r.z.call["ZSTD_getFrameContentSize", UInt64](data.unsafe_ptr(), len(data))
-    var out = List[UInt8](unsafe_uninit_length=Int(n) + 1 if n < (1 << 30) else 4 * len(data) + 4096)
-    var done = 0
+    var d = Zdec(False)
+    var p = data.unsafe_ptr().unsafe_mut_cast[False]()
+    var ip = 0
     while True:
-        done += r.read(Span(out)[done:])
-        if done < len(out):
+        var c = d.parse(p.unsafe_offset(ip), len(data) - ip)
+        ip += c
+        if c == 0:
             break
-        out.resize(unsafe_uninit_length=2 * len(out))
-    out.resize(unsafe_uninit_length=done)
-    return out^
+    if ip < len(data) or not d.idle():
+        raise Error("zstd: truncated input")
+    d.out.resize(unsafe_uninit_length=d.op)
+    var res = List[UInt8]()
+    swap(res, d.out)
+    return res^
 
 
 struct ZstdWriter(Movable):

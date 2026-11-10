@@ -1,5 +1,6 @@
 """Oracle for the gate, Python zstandard + lz4 (dev group). Run as `.venv/bin/python -I tools/oracle.py`.
   gen DIR N SEED [BADS]  fixtures + N seeded random cases + corrupted variants; writes jobs.txt, want.txt, ref/
+  vec DIR FLIPBYTES FILE...  fixtures from existing .zst files, plus every single-bit flip of those up to FLIPBYTES long
   verify DIR      cases.mojo's out/ and our/ files against ref/ and the sources
   corpus FILE MB  seeded word-salad text, the bench input
   bench FILE      the work of tests/bench.mojo, in Python"""
@@ -138,6 +139,32 @@ def gen(d, n, seed, bads=2):
     print(f"gen: {len(raws)} sources, {len(files)} oracle files, {len(jobs)} jobs")
 
 
+def vec(d, flips, paths):
+    """Fixture dir from existing .zst files (decodecorpus output, the zstd repo's golden files): verdict per file by
+    the system libzstd; with flips > 0 every single-bit flip of each file up to that many bytes as well."""
+    for sub in ("", "ref", "our", "out"):
+        os.makedirs(f"{d}/{sub}", exist_ok=True)
+    files = {}
+    for p in paths:
+        files[os.path.basename(p).replace(".zst", "") + ".zst"] = open(p, "rb").read()
+    for name, c in list(files.items()):
+        if len(c) <= flips:
+            for i in range(len(c) * 8):
+                files[f"{name[:-4]}.f{i}.zst"] = c[:i // 8] + bytes([c[i // 8] ^ (1 << i % 8)]) + c[i // 8 + 1:]
+    jobs, want = [], []
+    for f, c in files.items():
+        open(f"{d}/{f}", "wb").write(c)
+        o = sysdec(c)
+        r = "error" if o is None else f"ok {len(o)}"
+        for op in ("dec", "sdec"):
+            jobs.append(f"{op} {f}"); want.append(f"{op} {f} {r}")
+        if o is not None:
+            open(f"{d}/ref/{f}", "wb").write(o)
+    open(f"{d}/jobs.txt", "w").write("\n".join(jobs) + "\n")
+    open(f"{d}/want.txt", "w").write("\n".join(want) + "\n")
+    print(f"vec: {len(files)} files, {len(jobs)} jobs")
+
+
 def verify(d):
     n = 0
     for line in open(f"{d}/want.txt").read().split("\n")[:-1]:
@@ -177,4 +204,4 @@ def bench(p):
     print("zstd c %d ms d %d ms (%d B); lz4 c %d ms d %d ms (%d B)" % ((t1 - t) * 1e3, (t2 - t1) * 1e3, len(c), (t3 - t2) * 1e3, (t4 - t3) * 1e3, len(lc)))
 
 
-{"gen": lambda: gen(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]) if len(sys.argv) > 5 else 2), "verify": lambda: verify(sys.argv[2]), "corpus": lambda: corpus(sys.argv[2], int(sys.argv[3])), "bench": lambda: bench(sys.argv[2])}[sys.argv[1]]()
+{"gen": lambda: gen(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]) if len(sys.argv) > 5 else 2), "vec": lambda: vec(sys.argv[2], int(sys.argv[3]), sys.argv[4:]), "verify": lambda: verify(sys.argv[2]), "corpus": lambda: corpus(sys.argv[2], int(sys.argv[3])), "bench": lambda: bench(sys.argv[2])}[sys.argv[1]]()
