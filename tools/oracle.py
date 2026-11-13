@@ -4,7 +4,7 @@
   verify DIR      cases.mojo's out/ and our/ files against ref/ and the sources
   corpus FILE MB  seeded word-salad text, the bench input
   bench FILE [levels]  the work of tests/bench.mojo, in Python"""
-import os, random, resource, sys, time
+import ctypes, os, random, resource, sys, time
 import lz4.frame as L
 import zstandard as Z
 
@@ -12,26 +12,37 @@ resource.setrlimit(resource.RLIMIT_AS, (3 << 30, 3 << 30))  # memory rule: a run
 MAX_FRAMES, MAX_OUT = 64, 1 << 28  # bounds for dec(): frames per input, decoded bytes
 
 
-assert Z.ZSTD_VERSION == (1, 5, 7), f"oracle needs zstandard bundling libzstd 1.5.7, got {Z.ZSTD_VERSION}"
+class _Buf(ctypes.Structure):
+    _fields_ = [("p", ctypes.c_void_p), ("size", ctypes.c_size_t), ("pos", ctypes.c_size_t)]
 
 
 def sysdec(b):
-    """Every frame of b through libzstd 1.5.7 as bundled in zstandard 0.25.0 (the version src/zstd's accept/reject
-    rules follow); None when it calls b bad. The system libzstd is not used: its verdict on a corrupted frame changes
-    with its version (Ubuntu 24.04 ships 1.5.5, which accepts frames 1.5.7 rejects)."""
-    out, n, d = [], 0, Z.ZstdDecompressor()
+    """Every frame of b through the system libzstd.so.1, the library src/zstd loads; None when it calls b bad.
+    A corrupted frame's verdict depends on the libzstd version (1.5.5 accepts frames 1.5.7 rejects), so
+    corrupted variants are judged by the library the wrapper runs on; valid frames keep zstandard."""
+    z = ctypes.CDLL("libzstd.so.1")
+    z.ZSTD_createDStream.restype = ctypes.c_void_p
+    z.ZSTD_decompressStream.restype = ctypes.c_size_t
+    z.ZSTD_decompressStream.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Buf), ctypes.POINTER(_Buf)]
+    z.ZSTD_isError.argtypes = [ctypes.c_size_t]
+    z.ZSTD_freeDStream.argtypes = [ctypes.c_void_p]
+    ds, src, out, rc = z.ZSTD_createDStream(), ctypes.create_string_buffer(b, len(b)), [], 1
+    dst = ctypes.create_string_buffer(1 << 16)
+    i = _Buf(ctypes.cast(src, ctypes.c_void_p), len(b), 0)
     try:
-        while True:
-            f = d.decompressobj()
-            c = f.decompress(b)
-            out.append(c); n += len(c)
-            if n > MAX_OUT or not f.eof:
-                return None  # over the bound, or input ended inside a frame
-            b = f.unused_data
-            if not b:
-                return b"".join(out)
-    except Z.ZstdError:
-        return None
+        while i.pos < len(b) or rc != 0:
+            o = _Buf(ctypes.cast(dst, ctypes.c_void_p), len(dst), 0)
+            before = i.pos
+            rc = z.ZSTD_decompressStream(ds, ctypes.byref(o), ctypes.byref(i))
+            if z.ZSTD_isError(rc):
+                return None
+            out.append(dst.raw[:o.pos])
+            if sum(map(len, out)) > MAX_OUT or (o.pos == 0 and i.pos == before):
+                return None  # over the bound, or no progress: input ended inside a frame
+    finally:
+        z.ZSTD_freeDStream(ds)
+    return b"".join(out)
+
 
 def dec(b, kind):
     """Every frame of b, concatenated; None when Python calls the input bad."""
