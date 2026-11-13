@@ -21,6 +21,8 @@ def sysdec(b):
     A corrupted frame's verdict depends on the libzstd version (1.5.5 accepts frames 1.5.7 rejects), so
     corrupted variants are judged by the library the wrapper runs on; valid frames keep zstandard."""
     z = ctypes.CDLL("libzstd.so.1")
+    if z.ZSTD_versionNumber() != 10507:  # verdicts on corrupted frames change with the version; src/zstd follows 1.5.7
+        sys.exit(f"FAIL oracle: system libzstd {z.ZSTD_versionNumber()}, need 10507 (1.5.7: Ubuntu 26.04, Arch)")
     z.ZSTD_createDStream.restype = ctypes.c_void_p
     z.ZSTD_decompressStream.restype = ctypes.c_size_t
     z.ZSTD_decompressStream.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Buf), ctypes.POINTER(_Buf)]
