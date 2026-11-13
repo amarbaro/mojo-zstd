@@ -8,3 +8,4 @@ What broke, and the rule that stops it. Newest first.
 - A module named `match.mojo` does not parse (`match` is a keyword). -> Module names avoid Mojo keywords.
 - decodecorpus was built inside another project's source tree and left object files there. -> Copy sources into `.work/` before building a C tool.
 - A decoder's verdicts on corrupt input only matched libzstd after reading its source (one-pass path for small known-size frames, empty last block, fast Huffman loop): -> match a reference decoder on corrupt input by reading its source and fuzzing every bit, never by guessing from the spec.
+- The stream gate allowed +1 MB RSS growth while its own comment measured runner noise up to 1.3 MB; the nightly matrix failed at +1072 KB (mojo-libs #4) -> a threshold sits above the measured noise with margin and below the defect size it guards (here ~128 MB).
